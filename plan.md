@@ -42,10 +42,11 @@ sandbox at launch time.
 - [x] Added workspace folder mounts for the sandbox.
 - [x] Added host-managed workspace session mount routing.
 - [x] Added integration-style tests for Docker launch command construction.
+- [x] Wired the CLI to load providers, parse manifests, validate folders, create session
+  directories, and execute Docker.
 
 ## Pending
 
-- [ ] Execute the constructed Docker launch command from the CLI.
 - [ ] Run `cargo fmt --check`.
 - [ ] Run `cargo clippy -- -D warnings`.
 - [ ] Run `cargo test`.

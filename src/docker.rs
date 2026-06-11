@@ -10,8 +10,8 @@ const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
-/// Pinned Codex CLI Docker image used for sandbox launches.
-pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-cli:latest";
+/// Default pinned Codex CLI Docker image used for sandbox launches.
+pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-cli:0.1.0";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +57,20 @@ impl DockerLaunchConfig {
     #[must_use]
     pub fn sessions_root(&self) -> &Path {
         &self.sessions_root
+    }
+
+    /// Return the host sessions path for one workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_name` - Workspace name used as the host session directory key.
+    ///
+    /// # Returns
+    ///
+    /// Host path mounted as `/root/.codex/sessions` inside the sandbox.
+    #[must_use]
+    pub fn workspace_sessions_path(&self, workspace_name: &str) -> PathBuf {
+        self.sessions_root().join(workspace_name).join("sessions")
     }
 }
 
@@ -140,10 +154,7 @@ fn docker_run_args(
         true,
     ));
 
-    let sessions_path = launch_config
-        .sessions_root()
-        .join(manifest.name())
-        .join("sessions");
+    let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
 
     for (index, folder) in manifest.folders().iter().enumerate() {
@@ -191,7 +202,7 @@ mod tests {
 
     fn test_provider() -> CodexProvider {
         CodexProvider::new(
-            "/host/codex/auth.json".to_owned(),
+            "primary".to_owned(),
             "/host/codex/auth.json".to_owned(),
             "/host/codex/config.toml".to_owned(),
         )

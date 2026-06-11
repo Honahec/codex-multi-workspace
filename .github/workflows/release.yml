@@ -51,7 +51,28 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Read crate version
+        id: crate
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check crates.io version
+        id: crates
+        run: |
+          status="$(curl -sS -o /tmp/codex-multi-workspace-version.json -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/codex-multi-workspace/${{ steps.crate.outputs.version }}")"
+          if [ "$status" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [ "$status" = "404" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unexpected crates.io response: $status" >&2
+            exit 1
+          fi
+
       - name: Publish crate
+        if: steps.crates.outputs.exists == 'false'
         run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -41,7 +41,8 @@ workspace conversation sessions under a predictable host path.
 - [x] Added a concise user-facing README covering install, workspace setup, runtime image,
   cc-switch, and Codex Universal usage.
 - [x] Added tag-based GitHub Actions release publishing for GHCR and crates.io.
+- [x] Published the initial `codex-multi-workspace` crate release to crates.io.
 
 ## Pending
 
-- [ ] Publish the initial crate release.
+- [ ] Push a release tag to build and publish the default GHCR runtime image.

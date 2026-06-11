@@ -42,7 +42,8 @@ workspace conversation sessions under a predictable host path.
   cc-switch, and Codex Universal usage.
 - [x] Added tag-based GitHub Actions release publishing for GHCR and crates.io.
 - [x] Published the initial `codex-multi-workspace` crate release to crates.io.
+- [x] Pushed the `v0.1.0` release tag to trigger the GHCR runtime image release.
 
 ## Pending
 
-- [ ] Push a release tag to build and publish the default GHCR runtime image.
+- [ ] Verify the default GHCR runtime image is available after the release workflow completes.

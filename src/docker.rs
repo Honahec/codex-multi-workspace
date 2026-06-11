@@ -10,7 +10,7 @@ const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
 /// Default Codex CLI Docker image used for sandbox launches.
-pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-cli:latest";
+pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-universal:latest";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,7 +267,7 @@ mod tests {
 
     fn test_launch_config() -> DockerLaunchConfig {
         DockerLaunchConfig::new(
-            "codex-cli:test".to_owned(),
+            "codex-universal:test".to_owned(),
             PathBuf::from("/host/.codex-ws"),
         )
     }
@@ -303,7 +303,7 @@ mod tests {
                 "/projects/frontend:/workspace/2",
                 "--workdir",
                 "/workspace/1",
-                "codex-cli:test",
+                "codex-universal:test",
                 "codex",
             ]
         );

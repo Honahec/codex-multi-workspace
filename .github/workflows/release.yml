@@ -10,13 +10,68 @@ permissions:
   packages: write
 
 jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    outputs:
+      crate_version: ${{ steps.version.outputs.crate_version }}
+      image_changed: ${{ steps.image.outputs.changed }}
+      image_version: ${{ steps.image.outputs.current_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag matches Cargo.toml version
+        id: version
+        run: |
+          crate_version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          tag_version="${GITHUB_REF_NAME#v}"
+
+          if [ "$crate_version" != "$tag_version" ]; then
+            echo "Cargo.toml version ${crate_version} does not match tag ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+          echo "crate_version=${crate_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check Docker image version
+        id: image
+        run: |
+          label_pattern='s/^LABEL[[:space:]]+org\.openai\.codex-ws\.image-version="([^"]+)".*/\1/p'
+          current_version="$(sed -nE "$label_pattern" Dockerfile.codex-ws)"
+
+          if [ -z "$current_version" ]; then
+            echo "Dockerfile.codex-ws is missing LABEL org.openai.codex-ws.image-version." >&2
+            exit 1
+          fi
+
+          current_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          previous_tag="$(git describe --tags --abbrev=0 "${current_commit}^" 2>/dev/null || true)"
+
+          if [ -z "$previous_tag" ]; then
+            changed=true
+          else
+            previous_version="$(git show "${previous_tag}:Dockerfile.codex-ws" 2>/dev/null | sed -nE "$label_pattern" || true)"
+            if [ "$current_version" = "$previous_version" ]; then
+              changed=false
+            else
+              changed=true
+            fi
+          fi
+
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "current_version=${current_version}" >> "$GITHUB_OUTPUT"
+
   publish-image:
     runs-on: ubuntu-latest
+    needs: validate-release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Log in to GHCR
+        if: needs.validate-release.outputs.image_changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -24,6 +79,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
+        if: needs.validate-release.outputs.image_changed == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -33,6 +89,7 @@ jobs:
             type=ref,event=tag
 
       - name: Build and push image
+        if: needs.validate-release.outputs.image_changed == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -41,9 +98,16 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Skip unchanged image
+        if: needs.validate-release.outputs.image_changed == 'false'
+        run: |
+          echo "Docker image version ${{ needs.validate-release.outputs.image_version }} is unchanged; skipping GHCR publish."
+
   publish-crate:
     runs-on: ubuntu-latest
-    needs: publish-image
+    needs:
+      - validate-release
+      - publish-image
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,18 +115,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Read crate version
-        id: crate
-        run: |
-          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
       - name: Check crates.io version
         id: crates
         run: |
           status="$(curl -sS -o /tmp/codex-multi-workspace-version.json -w "%{http_code}" \
             -H "User-Agent: Honahec/codex-multi-workspace release workflow (https://github.com/Honahec/codex-multi-workspace)" \
-            "https://crates.io/api/v1/crates/codex-multi-workspace/${{ steps.crate.outputs.version }}")"
+            "https://crates.io/api/v1/crates/codex-multi-workspace/${{ needs.validate-release.outputs.crate_version }}")"
           if [ "$status" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           elif [ "$status" = "404" ]; then
@@ -74,6 +132,6 @@ jobs:
 
       - name: Publish crate
         if: steps.crates.outputs.exists == 'false'
-        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
+        run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

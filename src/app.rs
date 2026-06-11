@@ -6,6 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
+use crate::config::{
+    default_cc_switch_database_path, default_state_root, load_default_user_config,
+};
 use crate::docker::{
     DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
     build_docker_run_command,
@@ -69,13 +72,14 @@ impl RunConfig {
     ///
     /// Returns an error when a workspace name cannot be resolved.
     pub fn from_args(args: RunArgs) -> Result<Self> {
-        let sessions_root = expand_home_path(args.sessions_root);
+        let sessions_root = resolve_sessions_root(args.sessions_root)?;
         let workspace_path = resolve_workspace_path(args.workspace, &sessions_root)?;
+        let provider_database_path = resolve_provider_database_path(args.config_db)?;
 
         Ok(Self::new(
             args.provider,
             workspace_path,
-            expand_home_path(args.config_db),
+            provider_database_path,
             args.image,
             DockerLaunchConfig::new(DEFAULT_CODEX_IMAGE.to_owned(), sessions_root),
         ))
@@ -132,6 +136,41 @@ impl RunConfig {
 
         self.docker_launch_config.clone()
     }
+}
+
+/// Resolve the codex-ws state root from an optional CLI override.
+///
+/// # Arguments
+///
+/// * `sessions_root` - Optional user-provided state root.
+///
+/// # Returns
+///
+/// The explicit path with home expansion, or the default codex-ws state root.
+///
+/// # Errors
+///
+/// Returns an error when the default state root cannot be resolved.
+pub fn resolve_sessions_root(sessions_root: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = sessions_root {
+        return Ok(expand_home_path(path));
+    }
+
+    default_state_root().context("failed to resolve default codex-ws state root")
+}
+
+fn resolve_provider_database_path(config_db: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = config_db {
+        return Ok(expand_home_path(path));
+    }
+
+    let user_config =
+        load_default_user_config().context("failed to load codex-ws user configuration")?;
+    if let Some(path) = user_config.cc_switch_db() {
+        return Ok(expand_home_path(path.to_path_buf()));
+    }
+
+    default_cc_switch_database_path().context("failed to resolve default cc-switch database path")
 }
 
 /// Execute the configured workspace launch.

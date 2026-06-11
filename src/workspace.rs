@@ -312,7 +312,7 @@ pub fn expand_home_path(path: PathBuf) -> PathBuf {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
 }
 
 #[cfg(test)]

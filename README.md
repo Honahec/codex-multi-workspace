@@ -53,13 +53,27 @@ List saved workspaces:
 codex-ws workspace ls
 ```
 
+## Configure cc-switch
+
+If your cc-switch database is not in the legacy Unix-style location, persist its
+path once:
+
+```sh
+codex-ws config set cc-switch-db /path/to/cc-switch.db
+```
+
+Read it back:
+
+```sh
+codex-ws config get cc-switch-db
+```
+
 ## Run
 
 ```sh
 codex-ws run \
   --provider OpenAI \
-  --workspace my-workspace \
-  --config-db ~/.cc-switch/cc-switch.db
+  --workspace my-workspace
 ```
 
 You can also pass a manifest path directly:
@@ -67,6 +81,11 @@ You can also pass a manifest path directly:
 ```sh
 codex-ws run --provider OpenAI --workspace /path/to/workspace.yaml
 ```
+
+`--config-db` still overrides the saved `cc-switch-db` value for one run.
+Like cc-switch, `codex-ws` resolves `~` from the OS user home directory instead
+of trusting the `HOME` environment variable, which avoids common Windows shell
+path mismatches.
 
 ## Runtime Image
 

@@ -44,6 +44,13 @@ workspace conversation sessions under a predictable host path.
 - [x] Published the initial `codex-multi-workspace` crate release to crates.io.
 - [x] Pushed the `v0.1.0` release tag to trigger the GHCR runtime image release.
 - [x] Fixed the release workflow crates.io version check to send an explicit User-Agent.
+- [x] Added `config set <config-name> <config-value>` and `config get [config-name]`
+  for user-level codex-ws configuration under the real-home `~/.codex-ws/config`
+  directory, matching cc-switch's home-directory strategy.
+- [x] Supported `cc-switch-db` as the first config key and used it as the default
+  provider database path when `run --config-db` is not passed.
+- [x] Made home-directory expansion work on Windows hosts where `HOME` may be absent
+  or injected by Git/MSYS/Cygwin shells.
 
 ## Pending
 

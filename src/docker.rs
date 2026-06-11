@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use directories::BaseDirs;
 use thiserror::Error;
 
+use crate::config::default_state_root;
 use crate::manifest::WorkspaceManifest;
 
 const CONTAINER_CODEX_DIR: &str = "/root/.codex";
@@ -128,10 +130,8 @@ impl DockerLaunchConfig {
 
 impl Default for DockerLaunchConfig {
     fn default() -> Self {
-        Self::new(
-            DEFAULT_CODEX_IMAGE.to_owned(),
-            default_sessions_root_from_home().unwrap_or_else(|| PathBuf::from(".codex-ws")),
-        )
+        let sessions_root = default_state_root().unwrap_or_else(|_| PathBuf::from(".codex-ws"));
+        Self::new(DEFAULT_CODEX_IMAGE.to_owned(), sessions_root)
     }
 }
 
@@ -299,12 +299,8 @@ fn container_name(workspace_name: &str) -> String {
     name
 }
 
-fn default_sessions_root_from_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex-ws"))
-}
-
 fn default_skills_path_from_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".agents").join("skills"))
+    BaseDirs::new().map(|dirs| dirs.home_dir().join(".agents").join("skills"))
 }
 
 #[cfg(test)]

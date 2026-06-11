@@ -18,11 +18,12 @@ sandbox at launch time.
 - [x] Identified Docker sandbox launch as the runtime boundary.
 - [x] Identified host-managed session routing for workspace history.
 - [x] Created this live, trackable project plan.
+- [x] Initialized the Rust CLI crate structure for `codex-ws`.
+- [x] Defined the initial CLI command surface for selecting a provider configuration and
+  workspace.
 
 ## Pending
 
-- [ ] Initialize or verify the Rust CLI crate structure for `codex-ws`.
-- [ ] Define the CLI command surface for selecting a provider configuration and workspace.
 - [ ] Read Codex provider rows from `~/.cc-switch/cc-switch.db`.
 - [ ] Filter provider rows to `app_type == "codex"`.
 - [ ] Map provider fields into internal Rust types:

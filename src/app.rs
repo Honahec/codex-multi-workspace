@@ -140,12 +140,11 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
     let sessions_path = config
         .docker_launch_config()
         .workspace_sessions_path(manifest.name());
-    fs::create_dir_all(&sessions_path).with_context(|| {
-        format!(
-            "failed to create workspace sessions directory '{}'",
-            sessions_path.display()
-        )
-    })?;
+    create_host_directory(&sessions_path, "workspace sessions")?;
+    let tools_path = config
+        .docker_launch_config()
+        .workspace_tools_path(manifest.name());
+    create_host_directory(&tools_path, "workspace tools")?;
 
     let provider_files = write_provider_config_files(
         &provider,
@@ -190,6 +189,11 @@ fn write_provider_config_files(
     })?;
 
     Ok(ProviderConfigFiles::new(auth_path, config_path))
+}
+
+fn create_host_directory(path: &Path, label: &str) -> Result<()> {
+    fs::create_dir_all(path)
+        .with_context(|| format!("failed to create {label} directory '{}'", path.display()))
 }
 
 fn select_provider(providers: Vec<CodexProvider>, provider_name: &str) -> Result<CodexProvider> {

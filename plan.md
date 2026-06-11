@@ -35,10 +35,11 @@ sandbox at launch time.
 - [x] Supported single-folder and multi-folder workspaces in manifests.
 - [x] Implemented sandbox network configuration parsing.
 - [x] Added unit tests for manifest parsing.
+- [x] Implemented workspace folder path validation before launch.
+- [x] Added unit tests for workspace folder validation.
 
 ## Pending
 
-- [ ] Validate workspace folder paths before launch.
 - [ ] Start Docker with a pinned Codex CLI version.
 - [ ] Pass selected auth and config files into the sandbox.
 - [ ] Mount workspace folders into the sandbox.

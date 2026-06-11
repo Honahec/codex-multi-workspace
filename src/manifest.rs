@@ -135,6 +135,20 @@ pub enum ManifestError {
     /// The workspace did not include any folders.
     #[error("workspace manifest must include at least one folder")]
     NoFolders,
+
+    /// A workspace folder path does not exist.
+    #[error("workspace folder '{path}' does not exist")]
+    FolderMissing {
+        /// Missing workspace folder path.
+        path: PathBuf,
+    },
+
+    /// A workspace folder path exists but is not a directory.
+    #[error("workspace folder '{path}' is not a directory")]
+    FolderNotDirectory {
+        /// Non-directory workspace folder path.
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,9 +220,77 @@ pub fn parse_workspace_manifest(manifest_yaml: &str) -> Result<WorkspaceManifest
     raw_manifest.try_into()
 }
 
+/// Validate that every workspace folder exists and is a directory.
+///
+/// # Arguments
+///
+/// * `manifest` - Workspace manifest whose folders should be checked.
+///
+/// # Returns
+///
+/// `Ok(())` when all workspace folders exist and are directories.
+///
+/// # Errors
+///
+/// Returns [`ManifestError::FolderMissing`] when a folder path does not exist.
+/// Returns [`ManifestError::FolderNotDirectory`] when a folder path is not a directory.
+pub fn validate_workspace_folders(manifest: &WorkspaceManifest) -> Result<(), ManifestError> {
+    for folder in manifest.folders() {
+        if !folder.exists() {
+            return Err(ManifestError::FolderMissing {
+                path: folder.clone(),
+            });
+        }
+
+        if !folder.is_dir() {
+            return Err(ManifestError::FolderNotDirectory {
+                path: folder.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
+
+    static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Debug)]
+    struct TestTempDir {
+        path: PathBuf,
+    }
+
+    impl TestTempDir {
+        fn create() -> Self {
+            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "codex-ws-test-{}-{timestamp}-{counter}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("temporary test directory should be created");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn parse_workspace_manifest_supports_multiple_folders_and_network() {
@@ -276,5 +358,59 @@ folders: []
         .expect_err("empty folders should fail");
 
         assert!(matches!(error, ManifestError::NoFolders));
+    }
+
+    #[test]
+    fn validate_workspace_folders_accepts_existing_directories() {
+        let temp_dir = TestTempDir::create();
+        let folder = temp_dir.path().join("project");
+        fs::create_dir(&folder).expect("workspace folder should be created");
+        let manifest = WorkspaceManifest::new(
+            "workspace".to_owned(),
+            vec![folder],
+            SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        validate_workspace_folders(&manifest).expect("folder validation should pass");
+    }
+
+    #[test]
+    fn validate_workspace_folders_rejects_missing_paths() {
+        let temp_dir = TestTempDir::create();
+        let missing_folder = temp_dir.path().join("missing");
+        let manifest = WorkspaceManifest::new(
+            "workspace".to_owned(),
+            vec![missing_folder.clone()],
+            SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        let error = validate_workspace_folders(&manifest).expect_err("missing folder should fail");
+
+        assert!(matches!(
+            error,
+            ManifestError::FolderMissing { path } if path == missing_folder
+        ));
+    }
+
+    #[test]
+    fn validate_workspace_folders_rejects_files() {
+        let temp_dir = TestTempDir::create();
+        let file_path = temp_dir.path().join("file.txt");
+        fs::write(&file_path, "not a directory").expect("file should be written");
+        let manifest = WorkspaceManifest::new(
+            "workspace".to_owned(),
+            vec![file_path.clone()],
+            SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        let error = validate_workspace_folders(&manifest).expect_err("file path should fail");
+
+        assert!(matches!(
+            error,
+            ManifestError::FolderNotDirectory { path } if path == file_path
+        ));
     }
 }

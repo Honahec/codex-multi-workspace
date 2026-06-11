@@ -51,6 +51,8 @@ sandbox at launch time.
   interactive shell environment by default.
 - [x] Automated Codex CLI startup inside Codex Universal by installing or reusing the CLI in a
   persistent workspace tools directory.
+- [x] Switched automatic Codex CLI installation from npm to pnpm after confirming pnpm is
+  available in Codex Universal.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

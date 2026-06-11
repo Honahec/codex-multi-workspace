@@ -238,14 +238,11 @@ fn docker_run_args(
 fn codex_launch_script() -> String {
     format!(
         "set -euo pipefail; \
-         export NPM_CONFIG_PREFIX={CONTAINER_TOOLS_DIR}/npm; \
-         export PATH=\"$NPM_CONFIG_PREFIX/bin:$HOME/.local/bin:$PATH\"; \
+         export PNPM_HOME={CONTAINER_TOOLS_DIR}/pnpm; \
+         export PATH=\"$PNPM_HOME:$PATH\"; \
          if ! command -v codex >/dev/null 2>&1; then \
-             if command -v npm >/dev/null 2>&1; then \
-                 npm install -g @openai/codex; \
-             else \
-                 curl -fsSL https://chatgpt.com/codex/install.sh | sh; \
-             fi; \
+             pnpm config set store-dir {CONTAINER_TOOLS_DIR}/pnpm-store; \
+             pnpm add -g @openai/codex; \
          fi; \
          exec codex"
     )

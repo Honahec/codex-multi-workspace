@@ -37,15 +37,15 @@ sandbox at launch time.
 - [x] Added unit tests for manifest parsing.
 - [x] Implemented workspace folder path validation before launch.
 - [x] Added unit tests for workspace folder validation.
+- [x] Implemented Docker sandbox launch command construction with a pinned Codex CLI image.
+- [x] Added provider auth and config mounts for the sandbox.
+- [x] Added workspace folder mounts for the sandbox.
+- [x] Added host-managed workspace session mount routing.
+- [x] Added integration-style tests for Docker launch command construction.
 
 ## Pending
 
-- [ ] Start Docker with a pinned Codex CLI version.
-- [ ] Pass selected auth and config files into the sandbox.
-- [ ] Mount workspace folders into the sandbox.
-- [ ] Mount workspace sessions from the host-managed session directory.
-- [ ] Route sessions using `~/.codex-ws/<workspace-name>/sessions`.
-- [ ] Add integration tests for launch command construction.
+- [ ] Execute the constructed Docker launch command from the CLI.
 - [ ] Run `cargo fmt --check`.
 - [ ] Run `cargo clippy -- -D warnings`.
 - [ ] Run `cargo test`.

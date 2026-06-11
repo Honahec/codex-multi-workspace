@@ -30,20 +30,20 @@ sandbox at launch time.
   - `settings.config.auth`
   - `settings.config.config`
 - [x] Added unit tests for provider filtering and mapping.
+- [x] Defined the workspace manifest schema.
+- [x] Implemented parsing workspace manifests from YAML.
+- [x] Supported single-folder and multi-folder workspaces in manifests.
+- [x] Implemented sandbox network configuration parsing.
+- [x] Added unit tests for manifest parsing.
 
 ## Pending
 
-- [ ] Define the workspace manifest schema.
-- [ ] Parse workspace manifests from YAML.
-- [ ] Support single-folder and multi-folder workspaces.
 - [ ] Validate workspace folder paths before launch.
-- [ ] Implement sandbox configuration options, including network access.
 - [ ] Start Docker with a pinned Codex CLI version.
 - [ ] Pass selected auth and config files into the sandbox.
 - [ ] Mount workspace folders into the sandbox.
 - [ ] Mount workspace sessions from the host-managed session directory.
 - [ ] Route sessions using `~/.codex-ws/<workspace-name>/sessions`.
-- [ ] Add unit tests for manifest parsing.
 - [ ] Add integration tests for launch command construction.
 - [ ] Run `cargo fmt --check`.
 - [ ] Run `cargo clippy -- -D warnings`.

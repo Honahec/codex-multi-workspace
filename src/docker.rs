@@ -20,7 +20,7 @@ const CODEX_SANDBOX_MODE: &str = "danger-full-access";
 pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "5";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "6";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,7 +384,6 @@ mod tests {
 
     use super::*;
     use crate::manifest::{RuntimeConfig, SandboxConfig};
-    use crate::runtime::RuntimeLanguageVersion;
 
     static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -516,13 +515,15 @@ mod tests {
 
     #[test]
     fn docker_run_args_passes_runtime_environment_variables() {
-        let runtime =
-            RuntimeLanguageVersion::parse("golang:1.25.1").expect("runtime spec should parse");
         let manifest = WorkspaceManifest::with_runtime(
             "workspace-name".to_owned(),
             vec![PathBuf::from("/projects/backend")],
             SandboxConfig::default(),
-            RuntimeConfig::with_language_versions(None, vec![runtime]),
+            RuntimeConfig::with_setup(
+                None,
+                vec!["python3".to_owned(), "python3-pip".to_owned()],
+                vec!["python3 -m pip install maturin".to_owned()],
+            ),
         )
         .expect("manifest should be valid");
 
@@ -535,8 +536,15 @@ mod tests {
 
         assert!(
             args.windows(2)
-                .any(|window| window == ["-e", "CODEX_ENV_GO_VERSION=1.25.1"])
+                .any(|window| window == ["-e", "CODEX_WS_APT_PACKAGES=python3 python3-pip"])
         );
+        assert!(args.windows(2).any(|window| {
+            window
+                == [
+                    "-e",
+                    "CODEX_WS_SETUP_COMMANDS=python3 -m pip install maturin",
+                ]
+        }));
     }
 
     #[test]

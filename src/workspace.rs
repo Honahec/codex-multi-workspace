@@ -215,10 +215,13 @@ folders:
 # sandbox:
 #   network: false
 
-# Optional Codex Universal language runtimes.
+# Optional runtime setup for the lightweight Ubuntu image.
 # runtime:
-#   - node:22
-#   - python:3.13
+#   apt:
+#     - python3
+#     - python3-pip
+#   setup:
+#     - python3 -m pip install --user maturin
 "#
     )
 }

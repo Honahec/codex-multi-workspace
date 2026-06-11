@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::runtime::{RuntimeEnvironmentVariable, RuntimeLanguageVersion, RuntimeSpecError};
+use crate::runtime::{
+    CODEX_WS_APT_PACKAGES_ENV, CODEX_WS_SETUP_COMMANDS_ENV, RuntimeEnvironmentVariable,
+    RuntimeSpecError, validate_apt_packages, validate_setup_commands,
+};
 
 /// Workspace manifest describing folders and sandbox options.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,7 +170,8 @@ impl SandboxConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuntimeConfig {
     image: Option<String>,
-    language_versions: Vec<RuntimeLanguageVersion>,
+    apt_packages: Vec<String>,
+    setup_commands: Vec<String>,
 }
 
 impl RuntimeConfig {
@@ -184,28 +188,32 @@ impl RuntimeConfig {
     pub fn new(image: Option<String>) -> Self {
         Self {
             image,
-            language_versions: Vec::new(),
+            apt_packages: Vec::new(),
+            setup_commands: Vec::new(),
         }
     }
 
-    /// Create a runtime configuration with language versions.
+    /// Create a runtime configuration with startup setup.
     ///
     /// # Arguments
     ///
     /// * `image` - Optional Docker image used for this workspace.
-    /// * `language_versions` - Codex Universal language runtimes requested by the workspace.
+    /// * `apt_packages` - Apt packages installed by the entrypoint before Codex starts.
+    /// * `setup_commands` - Shell commands run by the entrypoint before Codex starts.
     ///
     /// # Returns
     ///
     /// A runtime configuration value.
     #[must_use]
-    pub fn with_language_versions(
+    pub fn with_setup(
         image: Option<String>,
-        language_versions: Vec<RuntimeLanguageVersion>,
+        apt_packages: Vec<String>,
+        setup_commands: Vec<String>,
     ) -> Self {
         Self {
             image,
-            language_versions,
+            apt_packages,
+            setup_commands,
         }
     }
 
@@ -219,27 +227,50 @@ impl RuntimeConfig {
         self.image.as_deref()
     }
 
-    /// Return selected language runtime versions.
+    /// Return apt packages installed before Codex starts.
     ///
     /// # Returns
     ///
-    /// Language runtimes requested by this workspace.
+    /// Apt package names requested by this workspace.
     #[must_use]
-    pub fn language_versions(&self) -> &[RuntimeLanguageVersion] {
-        &self.language_versions
+    pub fn apt_packages(&self) -> &[String] {
+        &self.apt_packages
     }
 
-    /// Return Docker environment variables for Codex Universal.
+    /// Return setup commands run before Codex starts.
     ///
     /// # Returns
     ///
-    /// `CODEX_ENV_*` variables generated from configured language runtimes.
+    /// Shell commands requested by this workspace.
+    #[must_use]
+    pub fn setup_commands(&self) -> &[String] {
+        &self.setup_commands
+    }
+
+    /// Return Docker environment variables for runtime setup.
+    ///
+    /// # Returns
+    ///
+    /// Entrypoint variables generated from configured apt packages and setup commands.
     #[must_use]
     pub fn environment_variables(&self) -> Vec<RuntimeEnvironmentVariable> {
-        self.language_versions
-            .iter()
-            .map(RuntimeLanguageVersion::environment_variable)
-            .collect()
+        let mut variables = Vec::with_capacity(2);
+
+        if !self.apt_packages.is_empty() {
+            variables.push(RuntimeEnvironmentVariable::new(
+                CODEX_WS_APT_PACKAGES_ENV,
+                self.apt_packages.join(" "),
+            ));
+        }
+
+        if !self.setup_commands.is_empty() {
+            variables.push(RuntimeEnvironmentVariable::new(
+                CODEX_WS_SETUP_COMMANDS_ENV,
+                self.setup_commands.join("\n"),
+            ));
+        }
+
+        variables
     }
 }
 
@@ -318,19 +349,13 @@ const fn default_sandbox_network() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawRuntimeConfig {
-    Spec(String),
-    Specs(Vec<String>),
-    Map(RawRuntimeMap),
-}
-
 #[derive(Debug, Default, Deserialize)]
-struct RawRuntimeMap {
+struct RawRuntimeConfig {
     image: Option<String>,
     #[serde(default)]
-    languages: Vec<String>,
+    apt: Vec<String>,
+    #[serde(default)]
+    setup: Vec<String>,
 }
 
 impl TryFrom<RawWorkspaceManifest> for WorkspaceManifest {
@@ -347,34 +372,27 @@ impl TryFrom<RawWorkspaceManifest> for WorkspaceManifest {
     }
 }
 
-impl Default for RawRuntimeConfig {
-    fn default() -> Self {
-        Self::Map(RawRuntimeMap::default())
-    }
-}
-
 impl TryFrom<RawRuntimeConfig> for RuntimeConfig {
     type Error = ManifestError;
 
     fn try_from(raw: RawRuntimeConfig) -> Result<Self, Self::Error> {
-        match raw {
-            RawRuntimeConfig::Spec(spec) => runtime_from_parts(None, vec![spec]),
-            RawRuntimeConfig::Specs(specs) => runtime_from_parts(None, specs),
-            RawRuntimeConfig::Map(map) => runtime_from_parts(map.image, map.languages),
-        }
+        runtime_from_parts(raw.image, raw.apt, raw.setup)
     }
 }
 
 fn runtime_from_parts(
     image: Option<String>,
-    specs: Vec<String>,
+    apt_packages: Vec<String>,
+    setup_commands: Vec<String>,
 ) -> Result<RuntimeConfig, ManifestError> {
     let image = image.map(|runtime_image| runtime_image.trim().to_owned());
-    let language_versions = crate::runtime::parse_runtime_specs(&specs)?;
+    let apt_packages = validate_apt_packages(apt_packages)?;
+    let setup_commands = validate_setup_commands(setup_commands)?;
 
-    Ok(RuntimeConfig::with_language_versions(
+    Ok(RuntimeConfig::with_setup(
         image,
-        language_versions,
+        apt_packages,
+        setup_commands,
     ))
 }
 
@@ -553,33 +571,37 @@ runtime:
     }
 
     #[test]
-    fn parse_workspace_manifest_supports_scalar_runtime_spec() {
+    fn parse_workspace_manifest_supports_runtime_apt_packages() {
         let manifest = parse_workspace_manifest(
             r#"
-name: go-project
+name: python-project
 folders:
-  - /projects/go-project
-runtime: golang:1.25.1
+  - /projects/python-project
+runtime:
+  apt:
+    - python3
+    - python3-pip
 "#,
         )
         .expect("manifest should parse");
 
         assert_eq!(
             manifest.runtime().environment_variables()[0].docker_assignment(),
-            "CODEX_ENV_GO_VERSION=1.25.1"
+            "CODEX_WS_APT_PACKAGES=python3 python3-pip"
         );
     }
 
     #[test]
-    fn parse_workspace_manifest_supports_runtime_spec_list() {
+    fn parse_workspace_manifest_supports_runtime_setup_commands() {
         let manifest = parse_workspace_manifest(
             r#"
-name: web-project
+name: rust-project
 folders:
-  - /projects/web-project
+  - /projects/rust-project
 runtime:
-  - node:22
-  - python:3.13
+  setup:
+    - curl -fsSL https://sh.rustup.rs | sh -s -- -y
+    - . "$HOME/.cargo/env"
 "#,
         )
         .expect("manifest should parse");
@@ -590,24 +612,22 @@ runtime:
                 .iter()
                 .map(crate::runtime::RuntimeEnvironmentVariable::docker_assignment)
                 .collect::<Vec<_>>(),
-            vec![
-                "CODEX_ENV_NODE_VERSION=22".to_owned(),
-                "CODEX_ENV_PYTHON_VERSION=3.13".to_owned()
-            ]
+            vec!["CODEX_WS_SETUP_COMMANDS=curl -fsSL https://sh.rustup.rs | sh -s -- -y\n. \"$HOME/.cargo/env\"".to_owned()]
         );
     }
 
     #[test]
-    fn parse_workspace_manifest_supports_runtime_map_languages() {
+    fn parse_workspace_manifest_supports_runtime_apt_and_setup() {
         let manifest = parse_workspace_manifest(
             r#"
 name: mixed-project
 folders:
   - /projects/mixed-project
 runtime:
-  languages:
-    - rust:1.95.0
-    - java:21
+  apt:
+    - build-essential
+  setup:
+    - echo ready
 "#,
         )
         .expect("manifest should parse");
@@ -619,8 +639,8 @@ runtime:
                 .map(crate::runtime::RuntimeEnvironmentVariable::docker_assignment)
                 .collect::<Vec<_>>(),
             vec![
-                "CODEX_ENV_RUST_VERSION=1.95.0".to_owned(),
-                "CODEX_ENV_JAVA_VERSION=21".to_owned()
+                "CODEX_WS_APT_PACKAGES=build-essential".to_owned(),
+                "CODEX_WS_SETUP_COMMANDS=echo ready".to_owned()
             ]
         );
     }
@@ -669,23 +689,24 @@ runtime:
     }
 
     #[test]
-    fn parse_workspace_manifest_rejects_unsupported_runtime_versions() {
+    fn parse_workspace_manifest_rejects_invalid_apt_package() {
         let error = parse_workspace_manifest(
             r#"
 name: workspace
 folders:
   - /projects/backend
-runtime: go:1.99.0
+runtime:
+  apt:
+    - python3;curl
 "#,
         )
-        .expect_err("unsupported runtime version should fail");
+        .expect_err("invalid apt package should fail");
 
         assert!(matches!(
             error,
-            ManifestError::RuntimeSpec(crate::runtime::RuntimeSpecError::UnsupportedVersion {
-                language: crate::runtime::RuntimeLanguage::Go,
-                version
-            }) if version == "1.99.0"
+            ManifestError::RuntimeSpec(crate::runtime::RuntimeSpecError::InvalidAptPackage {
+                package
+            }) if package == "python3;curl"
         ));
     }
 

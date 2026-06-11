@@ -18,7 +18,7 @@ pub mod manifest;
 /// Provider configuration loading from the local configuration database.
 pub mod provider;
 
-/// Codex Universal runtime language selection.
+/// Workspace runtime setup validation.
 pub mod runtime;
 
 /// Saved workspace manifest management.

@@ -15,15 +15,15 @@ workspace conversation sessions under a predictable host path.
 - [x] Loaded Codex provider configuration from the local cc-switch SQLite database using
   the real `settings_config` schema.
 - [x] Added workspace manifest parsing for workspace name, folders, sandbox networking,
-  optional runtime image, and Codex Universal language versions.
+  optional runtime image, apt packages, and setup commands.
 - [x] Validated workspace folders before launching Docker.
 - [x] Built Docker launch construction for mounted workspace folders, provider config,
-  sessions, optional skills, sandbox networking, runtime environment variables, and image
+  sessions, optional skills, sandbox networking, runtime setup environment variables, and image
   selection.
-- [x] Added the GHCR runtime image based on Codex Universal with Codex CLI,
-  `bubblewrap`, and a wrapper entrypoint that runs Universal setup before Codex.
-- [x] Supported runtime specs such as `golang:1.25.1` by mapping them to Codex Universal
-  `CODEX_ENV_*` variables and validating against the supported version matrix.
+- [x] Replaced the Codex Universal default runtime with a lightweight Ubuntu 22.04 image
+  containing Codex CLI, Node.js 22, Git, `curl`, and `bubblewrap`.
+- [x] Added per-workspace runtime setup through `runtime.apt` and `runtime.setup`, avoiding
+  the 40GB Universal image for the default path.
 - [x] Switched persistent workspace state to only
   `.codex-ws/<workspace>/sessions`, avoiding persistence of the full container
   `/root/.codex` directory.
@@ -39,7 +39,7 @@ workspace conversation sessions under a predictable host path.
   model provider.
 - [x] Prepared crates.io package metadata for `codex-multi-workspace`.
 - [x] Added a concise user-facing README covering install, workspace setup, runtime image,
-  cc-switch, and Codex Universal usage.
+  cc-switch, and lightweight runtime setup.
 - [x] Added tag-based GitHub Actions release publishing for GHCR and crates.io.
 - [x] Published the initial `codex-multi-workspace` crate release to crates.io.
 - [x] Pushed the `v0.1.0` release tag to trigger the GHCR runtime image release.
@@ -54,4 +54,4 @@ workspace conversation sessions under a predictable host path.
 
 ## Pending
 
-- [ ] Verify the default GHCR runtime image is available after the release workflow completes.
+- [ ] Publish the lightweight GHCR runtime image with image version `6`.

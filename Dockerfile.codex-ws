@@ -1,14 +1,31 @@
-FROM ghcr.io/openai/codex-universal:latest
+FROM ubuntu:22.04
 
-LABEL org.openai.codex-ws.image-version="5"
+LABEL org.openai.codex-ws.image-version="6"
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends bubblewrap && \
+    apt-get install -y --no-install-recommends \
+        bash \
+        bubblewrap \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        xz-utils && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
+        gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > \
+        /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-RUN bash -lc 'npm install -g @openai/codex && \
+RUN npm install -g @openai/codex && \
+    npm cache clean --force && \
     ln -sf "$(command -v node)" /usr/local/bin/node && \
-    ln -sf "$(command -v codex)" /usr/local/bin/codex'
+    ln -sf "$(command -v codex)" /usr/local/bin/codex
 
 RUN mkdir -p /root/.codex
 

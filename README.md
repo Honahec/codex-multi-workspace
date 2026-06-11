@@ -16,9 +16,10 @@ and keeps each workspace's Codex sessions under `~/.codex-ws`.
 - Rust/Cargo for installation
 - A cc-switch database with at least one Codex provider
 
-The default runtime image is published to GHCR and is based on
-`ghcr.io/openai/codex-universal`. It includes Codex CLI and uses Codex
-Universal runtime variables for language versions.
+The default runtime image is published to GHCR and is based on Ubuntu 22.04. It
+includes Codex CLI, Node.js 22, Git, `curl`, and `bubblewrap`. Other language
+runtimes can be installed per workspace with `runtime.apt` and `runtime.setup`,
+or by selecting a custom Docker image.
 
 ## Install
 
@@ -45,10 +46,13 @@ name: my-workspace
 folders:
   - /absolute/path/to/project
 
-# Optional Codex Universal language runtimes.
+# Optional runtime setup for the lightweight Ubuntu image.
 # runtime:
-#   - node:22
-#   - python:3.13
+#   apt:
+#     - python3
+#     - python3-pip
+#   setup:
+#     - python3 -m pip install --user maturin
 ```
 
 List saved workspaces:
@@ -113,5 +117,23 @@ Override it when needed:
 ```sh
 codex-ws run --provider OpenAI --workspace my-workspace --image my-codex-runtime:latest
 ```
+
+Workspace manifests can also request extra packages and setup commands before
+Codex starts:
+
+```yaml
+runtime:
+  apt:
+    - python3
+    - python3-pip
+    - build-essential
+  setup:
+    - python3 -m pip install --user maturin
+```
+
+`runtime.apt` is installed with `apt-get install --no-install-recommends` inside
+the container. `runtime.setup` commands run in a login shell immediately before
+Codex, so PATH changes or sourced environment files can affect the Codex session.
+For heavier stacks, use `runtime.image` in the manifest or `--image`.
 
 **Welcome Stars and PRs.**

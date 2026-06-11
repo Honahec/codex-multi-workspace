@@ -1,11 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{ExitCode, ExitStatus};
+use std::process::{Command, ExitCode, ExitStatus};
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
-use crate::docker::{DockerLaunchConfig, ProviderConfigFiles, build_docker_run_command};
+use crate::docker::{
+    DEFAULT_CODEX_IMAGE, DockerLaunchConfig, ProviderConfigFiles, build_docker_run_command,
+};
 use crate::manifest::{load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
 
@@ -141,10 +143,7 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
         .docker_launch_config()
         .workspace_sessions_path(manifest.name());
     create_host_directory(&sessions_path, "workspace sessions")?;
-    let tools_path = config
-        .docker_launch_config()
-        .workspace_tools_path(manifest.name());
-    create_host_directory(&tools_path, "workspace tools")?;
+    ensure_default_image(config.docker_launch_config().image())?;
 
     let provider_files = write_provider_config_files(
         &provider,
@@ -194,6 +193,32 @@ fn write_provider_config_files(
 fn create_host_directory(path: &Path, label: &str) -> Result<()> {
     fs::create_dir_all(path)
         .with_context(|| format!("failed to create {label} directory '{}'", path.display()))
+}
+
+fn ensure_default_image(image: &str) -> Result<()> {
+    if image != DEFAULT_CODEX_IMAGE {
+        return Ok(());
+    }
+
+    let inspect_status = Command::new("docker")
+        .args(["image", "inspect", image])
+        .status()
+        .context("failed to inspect Docker image")?;
+    if inspect_status.success() {
+        return Ok(());
+    }
+
+    let build_status = Command::new("docker")
+        .args(["build", "-t", image, "-f", "Dockerfile.codex-ws", "."])
+        .status()
+        .context("failed to build Codex workspace Docker image")?;
+    if build_status.success() {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "failed to build Docker image '{image}' from Dockerfile.codex-ws"
+    ))
 }
 
 fn select_provider(providers: Vec<CodexProvider>, provider_name: &str) -> Result<CodexProvider> {

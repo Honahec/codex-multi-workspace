@@ -1,0 +1,5 @@
+FROM ghcr.io/openai/codex-universal:latest
+
+RUN bash -lc 'npm install -g @openai/codex'
+
+ENTRYPOINT ["codex"]

@@ -49,10 +49,10 @@ sandbox at launch time.
 - [x] Switched the default Docker image to the official Codex Universal image.
 - [x] Removed the hard-coded `codex` container command because Codex Universal starts an
   interactive shell environment by default.
-- [x] Automated Codex CLI startup inside Codex Universal by installing or reusing the CLI in a
-  persistent workspace tools directory.
-- [x] Switched automatic Codex CLI installation from npm to pnpm after confirming pnpm is
-  available in Codex Universal.
+- [x] Added a derived `codex-ws:latest` image that installs Codex CLI ahead of runtime and
+  uses `codex` as the image entrypoint.
+- [x] Added automatic local build of the derived Docker image when it is missing.
+- [x] Switched the derived image build to npm for simpler build-time Codex CLI installation.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

@@ -7,11 +7,10 @@ use crate::manifest::WorkspaceManifest;
 
 const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
-const CONTAINER_TOOLS_DIR: &str = "/opt/codex-ws-tools";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
 /// Default Codex CLI Docker image used for sandbox launches.
-pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-universal:latest";
+pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,20 +70,6 @@ impl DockerLaunchConfig {
     #[must_use]
     pub fn workspace_sessions_path(&self, workspace_name: &str) -> PathBuf {
         self.sessions_root().join(workspace_name).join("sessions")
-    }
-
-    /// Return the host tools path for one workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace_name` - Workspace name used as the host tools directory key.
-    ///
-    /// # Returns
-    ///
-    /// Host path mounted for reusable tools installed inside the sandbox.
-    #[must_use]
-    pub fn workspace_tools_path(&self, workspace_name: &str) -> PathBuf {
-        self.sessions_root().join(workspace_name).join("tools")
     }
 }
 
@@ -217,8 +202,6 @@ fn docker_run_args(
 
     let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
-    let tools_path = launch_config.workspace_tools_path(manifest.name());
-    args.extend(volume_args(&tools_path, CONTAINER_TOOLS_DIR, false));
 
     for (index, folder) in manifest.folders().iter().enumerate() {
         let target = format!("{CONTAINER_WORKSPACE_ROOT}/{}", index + 1);
@@ -228,24 +211,8 @@ fn docker_run_args(
     args.push("--workdir".to_owned());
     args.push(format!("{CONTAINER_WORKSPACE_ROOT}/1"));
     args.push(launch_config.image().to_owned());
-    args.push("bash".to_owned());
-    args.push("-lc".to_owned());
-    args.push(codex_launch_script());
 
     Ok(args)
-}
-
-fn codex_launch_script() -> String {
-    format!(
-        "set -euo pipefail; \
-         export PNPM_HOME={CONTAINER_TOOLS_DIR}/pnpm; \
-         export PATH=\"$PNPM_HOME:$PATH\"; \
-         if ! command -v codex >/dev/null 2>&1; then \
-             pnpm config set store-dir {CONTAINER_TOOLS_DIR}/pnpm-store; \
-             pnpm add -g @openai/codex; \
-         fi; \
-         exec codex"
-    )
 }
 
 fn volume_args(source: &Path, target: &str, read_only: bool) -> [String; 2] {
@@ -298,10 +265,7 @@ mod tests {
     }
 
     fn test_launch_config() -> DockerLaunchConfig {
-        DockerLaunchConfig::new(
-            "codex-universal:test".to_owned(),
-            PathBuf::from("/host/.codex-ws"),
-        )
+        DockerLaunchConfig::new("codex-ws:test".to_owned(), PathBuf::from("/host/.codex-ws"))
     }
 
     #[test]
@@ -330,17 +294,12 @@ mod tests {
                 "-v",
                 "/host/.codex-ws/workspace-name/sessions:/root/.codex/sessions",
                 "-v",
-                "/host/.codex-ws/workspace-name/tools:/opt/codex-ws-tools",
-                "-v",
                 "/projects/backend:/workspace/1",
                 "-v",
                 "/projects/frontend:/workspace/2",
                 "--workdir",
                 "/workspace/1",
-                "codex-universal:test",
-                "bash",
-                "-lc",
-                &codex_launch_script(),
+                "codex-ws:test",
             ]
         );
     }

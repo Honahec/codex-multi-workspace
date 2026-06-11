@@ -91,6 +91,15 @@ Like cc-switch, `codex-ws` resolves `~` from the OS user home directory instead
 of trusting the `HOME` environment variable, which avoids common Windows shell
 path mismatches.
 
+Workspace folders are mounted under `/workspace` using their original directory
+names. A single-folder workspace starts Codex in that project directory. A
+multi-folder workspace starts Codex in `/workspace`, with each project available
+as `/workspace/<folder-name>`. Folder names must be unique within one workspace.
+
+Codex runs with its internal command sandbox disabled inside the container. The
+Docker container is the workspace boundary, and `sandbox.network: false` still
+maps to Docker's `--network none`.
+
 ## Runtime Image
 
 By default, `codex-ws` uses:

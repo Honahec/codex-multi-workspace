@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -10,7 +11,10 @@ use crate::manifest::WorkspaceManifest;
 const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
 const CONTAINER_SKILLS_DIR: &str = "/root/.codex/skills";
-const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
+/// Container directory under which workspace folders are mounted.
+pub const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
+
+const CODEX_SANDBOX_MODE: &str = "danger-full-access";
 
 /// Default Codex CLI Docker image used for sandbox launches.
 pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
@@ -144,6 +148,20 @@ pub enum DockerError {
         /// Workspace name from the manifest.
         workspace_name: String,
     },
+
+    /// A workspace folder path cannot be represented as a stable container directory name.
+    #[error("workspace folder '{path}' does not have a usable directory name")]
+    InvalidWorkspaceFolderName {
+        /// Workspace folder path from the manifest.
+        path: PathBuf,
+    },
+
+    /// Two workspace folders would mount to the same container path.
+    #[error("multiple workspace folders are named '{folder_name}'")]
+    DuplicateWorkspaceFolderName {
+        /// Directory name shared by multiple workspace folders.
+        folder_name: String,
+    },
 }
 
 /// Provider configuration files written on the host before launching Docker.
@@ -219,6 +237,37 @@ pub fn build_docker_run_command(
     Ok(command)
 }
 
+/// Return the container mount target for each workspace folder.
+///
+/// # Arguments
+///
+/// * `manifest` - Workspace manifest whose folders should be mounted.
+///
+/// # Returns
+///
+/// Container paths under [`CONTAINER_WORKSPACE_ROOT`] using each folder's directory name.
+///
+/// # Errors
+///
+/// Returns [`DockerError::InvalidWorkspaceFolderName`] when a folder has no usable final path
+/// component, or [`DockerError::DuplicateWorkspaceFolderName`] when two folders share a name.
+pub fn workspace_mount_targets(manifest: &WorkspaceManifest) -> Result<Vec<String>, DockerError> {
+    let mut seen_names = HashSet::with_capacity(manifest.folders().len());
+    let mut targets = Vec::with_capacity(manifest.folders().len());
+
+    for folder in manifest.folders() {
+        let folder_name = workspace_folder_name(folder)?;
+        if !seen_names.insert(folder_name.to_owned()) {
+            return Err(DockerError::DuplicateWorkspaceFolderName {
+                folder_name: folder_name.to_owned(),
+            });
+        }
+        targets.push(format!("{CONTAINER_WORKSPACE_ROOT}/{folder_name}"));
+    }
+
+    Ok(targets)
+}
+
 fn docker_run_args(
     provider_files: &ProviderConfigFiles,
     manifest: &WorkspaceManifest,
@@ -229,6 +278,7 @@ fn docker_run_args(
             workspace_name: manifest.name().to_owned(),
         });
     }
+    let mount_targets = workspace_mount_targets(manifest)?;
 
     let mut args = vec![
         "run".to_owned(),
@@ -266,16 +316,39 @@ fn docker_run_args(
         ));
     }
 
-    for (index, folder) in manifest.folders().iter().enumerate() {
-        let target = format!("{CONTAINER_WORKSPACE_ROOT}/{}", index + 1);
-        args.extend(volume_args(folder, &target, false));
+    for (folder, target) in manifest.folders().iter().zip(&mount_targets) {
+        args.extend(volume_args(folder, target, false));
     }
 
     args.push("--workdir".to_owned());
-    args.push(format!("{CONTAINER_WORKSPACE_ROOT}/1"));
+    args.push(workdir_for_mount_targets(&mount_targets).to_owned());
     args.push(launch_config.image().to_owned());
+    args.extend(["--sandbox".to_owned(), CODEX_SANDBOX_MODE.to_owned()]);
 
     Ok(args)
+}
+
+fn workspace_folder_name(folder: &Path) -> Result<&str, DockerError> {
+    let Some(name) = folder.file_name().and_then(|name| name.to_str()) else {
+        return Err(DockerError::InvalidWorkspaceFolderName {
+            path: folder.to_path_buf(),
+        });
+    };
+    if name.is_empty() || name == "." || name == ".." {
+        return Err(DockerError::InvalidWorkspaceFolderName {
+            path: folder.to_path_buf(),
+        });
+    }
+
+    Ok(name)
+}
+
+fn workdir_for_mount_targets(mount_targets: &[String]) -> &str {
+    if let [target] = mount_targets {
+        return target;
+    }
+
+    CONTAINER_WORKSPACE_ROOT
 }
 
 fn volume_args(source: &Path, target: &str, read_only: bool) -> [String; 2] {
@@ -371,14 +444,61 @@ mod tests {
                 "-v",
                 &skills_mount,
                 "-v",
-                "/projects/backend:/workspace/1",
+                "/projects/backend:/workspace/backend",
                 "-v",
-                "/projects/frontend:/workspace/2",
+                "/projects/frontend:/workspace/frontend",
                 "--workdir",
-                "/workspace/1",
+                "/workspace",
                 "codex-ws:test",
+                "--sandbox",
+                "danger-full-access",
             ]
         );
+    }
+
+    #[test]
+    fn docker_run_args_uses_single_workspace_folder_as_workdir() {
+        let manifest = WorkspaceManifest::new(
+            "workspace-name".to_owned(),
+            vec![PathBuf::from("/projects/backend")],
+            SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        let args = docker_run_args(
+            &test_provider_files(),
+            &manifest,
+            &test_launch_config(PathBuf::from("/missing/skills")),
+        )
+        .expect("docker args should build");
+
+        assert!(
+            args.windows(2)
+                .any(|window| window == ["--workdir", "/workspace/backend"])
+        );
+    }
+
+    #[test]
+    fn docker_run_args_rejects_duplicate_workspace_folder_names() {
+        let manifest = WorkspaceManifest::new(
+            "workspace-name".to_owned(),
+            vec![
+                PathBuf::from("/projects/backend"),
+                PathBuf::from("/other/backend"),
+            ],
+            SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        let error = docker_run_args(
+            &test_provider_files(),
+            &manifest,
+            &test_launch_config(PathBuf::from("/missing/skills")),
+        )
+        .expect_err("duplicate workspace folder names should fail")
+        .to_string();
+
+        assert_eq!(error, "multiple workspace folders are named 'backend'");
     }
 
     #[test]

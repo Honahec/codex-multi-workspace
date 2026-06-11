@@ -10,8 +10,8 @@ use crate::config::{
     default_cc_switch_database_path, default_state_root, load_default_user_config,
 };
 use crate::docker::{
-    DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
-    build_docker_run_command,
+    CONTAINER_WORKSPACE_ROOT, DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig,
+    ProviderConfigFiles, build_docker_run_command, workspace_mount_targets,
 };
 use crate::manifest::{WorkspaceManifest, load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
@@ -240,7 +240,8 @@ fn write_provider_config_files(
             auth_path.display()
         )
     })?;
-    let config_toml = trusted_workspace_config(provider.config_toml(), manifest);
+    let config_toml = trusted_workspace_config(provider.config_toml(), manifest)
+        .context("failed to build trusted workspace configuration")?;
     fs::write(&config_path, config_toml).with_context(|| {
         format!(
             "failed to write provider config file '{}'",
@@ -254,20 +255,35 @@ fn write_provider_config_files(
     ))
 }
 
-fn trusted_workspace_config(provider_config_toml: &str, manifest: &WorkspaceManifest) -> String {
-    let mut config =
-        String::with_capacity(provider_config_toml.len() + manifest.folders().len() * 64);
+fn trusted_workspace_config(
+    provider_config_toml: &str,
+    manifest: &WorkspaceManifest,
+) -> Result<String> {
+    let trusted_paths = trusted_workspace_paths(manifest)?;
+    let mut config = String::with_capacity(provider_config_toml.len() + trusted_paths.len() * 64);
     config.push_str(provider_config_toml.trim_end());
     config.push_str("\n\n");
 
-    for index in 0..manifest.folders().len() {
+    for path in trusted_paths {
         config.push_str(&format!(
-            "[projects.\"/workspace/{}\"]\ntrust_level = \"trusted\"\n\n",
-            index + 1
+            "[projects.\"{path}\"]\ntrust_level = \"trusted\"\n\n"
         ));
     }
 
-    config
+    Ok(config)
+}
+
+fn trusted_workspace_paths(manifest: &WorkspaceManifest) -> Result<Vec<String>> {
+    let mount_targets =
+        workspace_mount_targets(manifest).context("failed to resolve workspace mount targets")?;
+    if mount_targets.len() == 1 {
+        return Ok(mount_targets);
+    }
+
+    let mut paths = Vec::with_capacity(mount_targets.len() + 1);
+    paths.push(CONTAINER_WORKSPACE_ROOT.to_owned());
+    paths.extend(mount_targets);
+    Ok(paths)
 }
 
 fn create_host_directory(path: &Path, label: &str) -> Result<()> {
@@ -435,7 +451,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(provider_config.files().config_path())
                 .expect("config file should be readable"),
-            "model = \"gpt-5.5\"\n\n[projects.\"/workspace/1\"]\ntrust_level = \"trusted\"\n\n"
+            "model = \"gpt-5.5\"\n\n[projects.\"/workspace/project\"]\ntrust_level = \"trusted\"\n\n"
         );
     }
 
@@ -501,10 +517,12 @@ mod tests {
         )
         .expect("manifest should be valid");
 
-        let config = trusted_workspace_config("model = \"gpt-5.5\"\n", &manifest);
+        let config = trusted_workspace_config("model = \"gpt-5.5\"\n", &manifest)
+            .expect("trusted workspace config should build");
 
-        assert!(config.contains("[projects.\"/workspace/1\"]\ntrust_level = \"trusted\""));
-        assert!(config.contains("[projects.\"/workspace/2\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[projects.\"/workspace\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[projects.\"/workspace/backend\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[projects.\"/workspace/frontend\"]\ntrust_level = \"trusted\""));
     }
 
     #[derive(Debug)]

@@ -211,8 +211,9 @@ folders:
   - /absolute/path/to/project
 
 sandbox:
-  # Set to true only when the container should have network access.
-  network: false
+  # Codex CLI runs inside the container, so it needs network access to reach the model provider.
+  # Set to false only for intentionally offline experiments.
+  network: true
 
 # Optional Codex Universal language runtime examples.
 # runtime: golang:1.25.1

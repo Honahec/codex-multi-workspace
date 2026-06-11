@@ -35,6 +35,8 @@ workspace conversation sessions under a predictable host path.
 - [x] Added `workspace ls` for listing saved workspace manifests.
 - [x] Added `workspace add <workspace-name>` for creating and editing a templated manifest.
 - [x] Allowed `run --workspace <workspace-name>` to resolve saved workspace manifests.
+- [x] Defaulted workspace sandbox networking to enabled so Codex CLI can reach the configured
+  model provider.
 
 ## Pending
 

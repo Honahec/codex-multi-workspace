@@ -126,9 +126,15 @@ impl WorkspaceManifest {
 }
 
 /// Sandbox options loaded from a workspace manifest.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SandboxConfig {
     network: bool,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self { network: true }
+    }
 }
 
 impl SandboxConfig {
@@ -294,10 +300,22 @@ struct RawWorkspaceManifest {
     runtime: Option<RawRuntimeConfig>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct RawSandboxConfig {
-    #[serde(default)]
+    #[serde(default = "default_sandbox_network")]
     network: bool,
+}
+
+impl Default for RawSandboxConfig {
+    fn default() -> Self {
+        Self {
+            network: default_sandbox_network(),
+        }
+    }
+}
+
+const fn default_sandbox_network() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -514,7 +532,7 @@ folders:
 
         assert_eq!(manifest.name(), "single-project");
         assert_eq!(manifest.folders(), &[PathBuf::from("/projects/backend")]);
-        assert!(!manifest.sandbox().network());
+        assert!(manifest.sandbox().network());
         assert_eq!(manifest.runtime().image(), None);
     }
 

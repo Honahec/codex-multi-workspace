@@ -7,19 +7,21 @@ use crate::manifest::WorkspaceManifest;
 
 const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
+const CONTAINER_SKILLS_DIR: &str = "/root/.codex/skills";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
 /// Default Codex CLI Docker image used for sandbox launches.
 pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "4";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "5";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerLaunchConfig {
     image: String,
     sessions_root: PathBuf,
+    skills_path: PathBuf,
 }
 
 impl DockerLaunchConfig {
@@ -38,6 +40,8 @@ impl DockerLaunchConfig {
         Self {
             image,
             sessions_root,
+            skills_path: default_skills_path_from_home()
+                .unwrap_or_else(|| PathBuf::from(".agents/skills")),
         }
     }
 
@@ -65,6 +69,7 @@ impl DockerLaunchConfig {
         Self {
             image,
             sessions_root: self.sessions_root.clone(),
+            skills_path: self.skills_path.clone(),
         }
     }
 
@@ -76,6 +81,34 @@ impl DockerLaunchConfig {
     #[must_use]
     pub fn sessions_root(&self) -> &Path {
         &self.sessions_root
+    }
+
+    /// Return the host skills directory.
+    ///
+    /// # Returns
+    ///
+    /// Host directory mounted read-only as `/root/.codex/skills`.
+    #[must_use]
+    pub fn skills_path(&self) -> &Path {
+        &self.skills_path
+    }
+
+    /// Return a copy of this configuration with a different host skills directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `skills_path` - Host directory containing Codex skills.
+    ///
+    /// # Returns
+    ///
+    /// A Docker launch configuration with the same image and sessions root.
+    #[must_use]
+    pub fn with_skills_path(&self, skills_path: PathBuf) -> Self {
+        Self {
+            image: self.image.clone(),
+            sessions_root: self.sessions_root.clone(),
+            skills_path,
+        }
     }
 
     /// Return the host sessions path for one workspace.
@@ -90,20 +123,6 @@ impl DockerLaunchConfig {
     #[must_use]
     pub fn workspace_sessions_path(&self, workspace_name: &str) -> PathBuf {
         self.sessions_root().join(workspace_name).join("sessions")
-    }
-
-    /// Return the host Codex home path for one workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace_name` - Workspace name used as the host Codex home directory key.
-    ///
-    /// # Returns
-    ///
-    /// Host path mounted as `/root/.codex` inside the sandbox.
-    #[must_use]
-    pub fn workspace_codex_home_path(&self, workspace_name: &str) -> PathBuf {
-        self.sessions_root().join(workspace_name).join("codex-home")
     }
 }
 
@@ -127,35 +146,50 @@ pub enum DockerError {
     },
 }
 
-/// Codex home directory written on the host before launching Docker.
+/// Provider configuration files written on the host before launching Docker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodexHome {
-    path: PathBuf,
+pub struct ProviderConfigFiles {
+    auth_path: PathBuf,
+    config_path: PathBuf,
 }
 
-impl CodexHome {
-    /// Create a Codex home directory mount.
+impl ProviderConfigFiles {
+    /// Create provider configuration file paths.
     ///
     /// # Arguments
     ///
-    /// * `path` - Host path to the generated writable Codex home directory.
+    /// * `auth_path` - Host path to the generated Codex auth JSON file.
+    /// * `config_path` - Host path to the generated Codex config TOML file.
     ///
     /// # Returns
     ///
-    /// Codex home directory mount used for Docker.
+    /// Provider configuration file paths used for Docker.
     #[must_use]
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub fn new(auth_path: PathBuf, config_path: PathBuf) -> Self {
+        Self {
+            auth_path,
+            config_path,
+        }
     }
 
-    /// Return the host Codex home path.
+    /// Return the host auth JSON path.
     ///
     /// # Returns
     ///
-    /// Host path to the generated writable Codex home directory.
+    /// Host path to the generated Codex auth JSON file.
     #[must_use]
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn auth_path(&self) -> &Path {
+        &self.auth_path
+    }
+
+    /// Return the host config TOML path.
+    ///
+    /// # Returns
+    ///
+    /// Host path to the generated Codex config TOML file.
+    #[must_use]
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
     }
 }
 
@@ -163,7 +197,7 @@ impl CodexHome {
 ///
 /// # Arguments
 ///
-/// * `codex_home` - Generated writable Codex home directory mounted into the sandbox.
+/// * `provider_files` - Generated provider configuration files mounted into the sandbox.
 /// * `manifest` - Validated workspace manifest.
 /// * `launch_config` - Docker image and host path settings.
 ///
@@ -175,18 +209,18 @@ impl CodexHome {
 ///
 /// Returns [`DockerError::NoWorkspaceFolders`] when the manifest has no folders.
 pub fn build_docker_run_command(
-    codex_home: &CodexHome,
+    provider_files: &ProviderConfigFiles,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Command, DockerError> {
-    let args = docker_run_args(codex_home, manifest, launch_config)?;
+    let args = docker_run_args(provider_files, manifest, launch_config)?;
     let mut command = Command::new("docker");
     command.args(args);
     Ok(command)
 }
 
 fn docker_run_args(
-    codex_home: &CodexHome,
+    provider_files: &ProviderConfigFiles,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Vec<String>, DockerError> {
@@ -212,9 +246,25 @@ fn docker_run_args(
         args.extend(["-e".to_owned(), variable.docker_assignment()]);
     }
 
-    args.extend(volume_args(codex_home.path(), CONTAINER_CODEX_DIR, false));
+    args.extend(volume_args(
+        provider_files.auth_path(),
+        &format!("{CONTAINER_CODEX_DIR}/auth.json"),
+        true,
+    ));
+    args.extend(volume_args(
+        provider_files.config_path(),
+        &format!("{CONTAINER_CODEX_DIR}/config.toml"),
+        false,
+    ));
     let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
+    if launch_config.skills_path().is_dir() {
+        args.extend(volume_args(
+            launch_config.skills_path(),
+            CONTAINER_SKILLS_DIR,
+            true,
+        ));
+    }
 
     for (index, folder) in manifest.folders().iter().enumerate() {
         let target = format!("{CONTAINER_WORKSPACE_ROOT}/{}", index + 1);
@@ -253,14 +303,27 @@ fn default_sessions_root_from_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex-ws"))
 }
 
+fn default_skills_path_from_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".agents").join("skills"))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
     use crate::manifest::{RuntimeConfig, SandboxConfig};
     use crate::runtime::RuntimeLanguageVersion;
 
-    fn test_codex_home() -> CodexHome {
-        CodexHome::new(PathBuf::from("/host/.codex-ws/workspace-name/codex-home"))
+    static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    fn test_provider_files() -> ProviderConfigFiles {
+        ProviderConfigFiles::new(
+            PathBuf::from("/tmp/codex-ws-provider/auth.json"),
+            PathBuf::from("/tmp/codex-ws-provider/config.toml"),
+        )
     }
 
     fn test_manifest(network: bool) -> WorkspaceManifest {
@@ -275,18 +338,23 @@ mod tests {
         .expect("manifest should be valid")
     }
 
-    fn test_launch_config() -> DockerLaunchConfig {
+    fn test_launch_config(skills_path: PathBuf) -> DockerLaunchConfig {
         DockerLaunchConfig::new("codex-ws:test".to_owned(), PathBuf::from("/host/.codex-ws"))
+            .with_skills_path(skills_path)
     }
 
     #[test]
     fn docker_run_args_mounts_provider_workspace_and_sessions() {
+        let temp_dir = TestTempDir::create();
+        let skills_path = temp_dir.path().join("skills");
+        fs::create_dir(&skills_path).expect("skills directory should be created");
         let args = docker_run_args(
-            &test_codex_home(),
+            &test_provider_files(),
             &test_manifest(false),
-            &test_launch_config(),
+            &test_launch_config(skills_path.clone()),
         )
         .expect("docker args should build");
+        let skills_mount = format!("{}:/root/.codex/skills:ro", skills_path.display());
 
         assert_eq!(
             args,
@@ -299,9 +367,13 @@ mod tests {
                 "--network",
                 "none",
                 "-v",
-                "/host/.codex-ws/workspace-name/codex-home:/root/.codex",
+                "/tmp/codex-ws-provider/auth.json:/root/.codex/auth.json:ro",
+                "-v",
+                "/tmp/codex-ws-provider/config.toml:/root/.codex/config.toml",
                 "-v",
                 "/host/.codex-ws/workspace-name/sessions:/root/.codex/sessions",
+                "-v",
+                &skills_mount,
                 "-v",
                 "/projects/backend:/workspace/1",
                 "-v",
@@ -316,9 +388,9 @@ mod tests {
     #[test]
     fn docker_run_args_omits_network_none_when_network_is_enabled() {
         let args = docker_run_args(
-            &test_codex_home(),
+            &test_provider_files(),
             &test_manifest(true),
-            &test_launch_config(),
+            &test_launch_config(PathBuf::from("/missing/skills")),
         )
         .expect("docker args should build");
 
@@ -338,8 +410,12 @@ mod tests {
         )
         .expect("manifest should be valid");
 
-        let args = docker_run_args(&test_codex_home(), &manifest, &test_launch_config())
-            .expect("docker args should build");
+        let args = docker_run_args(
+            &test_provider_files(),
+            &manifest,
+            &test_launch_config(PathBuf::from("/missing/skills")),
+        )
+        .expect("docker args should build");
 
         assert!(
             args.windows(2)
@@ -348,10 +424,53 @@ mod tests {
     }
 
     #[test]
+    fn docker_run_args_skips_missing_skills_directory() {
+        let args = docker_run_args(
+            &test_provider_files(),
+            &test_manifest(false),
+            &test_launch_config(PathBuf::from("/missing/skills")),
+        )
+        .expect("docker args should build");
+
+        assert!(!args.iter().any(|arg| arg.contains("/root/.codex/skills")));
+    }
+
+    #[test]
     fn container_name_replaces_unsupported_characters() {
         assert_eq!(
             container_name("my workspace/main"),
             "codex-ws-my-workspace-main"
         );
+    }
+
+    #[derive(Debug)]
+    struct TestTempDir {
+        path: PathBuf,
+    }
+
+    impl TestTempDir {
+        fn create() -> Self {
+            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "codex-ws-docker-test-{}-{timestamp}-{counter}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("temporary test directory should be created");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 }

@@ -1,6 +1,6 @@
 FROM ghcr.io/openai/codex-universal:latest
 
-LABEL org.openai.codex-ws.image-version="4"
+LABEL org.openai.codex-ws.image-version="5"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends bubblewrap && \
@@ -9,6 +9,8 @@ RUN apt-get update && \
 RUN bash -lc 'npm install -g @openai/codex && \
     ln -sf "$(command -v node)" /usr/local/bin/node && \
     ln -sf "$(command -v codex)" /usr/local/bin/codex'
+
+RUN mkdir -p /root/.codex
 
 COPY codex-ws-entrypoint.sh /usr/local/bin/codex-ws-entrypoint
 RUN chmod 0755 /usr/local/bin/codex-ws-entrypoint

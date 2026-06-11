@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
 use crate::docker::{
-    CodexHome, DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig,
+    DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
     build_docker_run_command,
 };
 use crate::manifest::{WorkspaceManifest, load_workspace_manifest, validate_workspace_folders};
@@ -165,32 +166,23 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
     create_host_directory(&sessions_path, "workspace sessions")?;
     ensure_default_image(docker_launch_config.image())?;
 
-    let codex_home = write_codex_home(
-        &provider,
-        &manifest,
-        &docker_launch_config.workspace_codex_home_path(manifest.name()),
-    )?;
-    let mut command = build_docker_run_command(&codex_home, &manifest, &docker_launch_config)
-        .context("failed to build Docker launch command")?;
+    let provider_config = write_provider_config_files(&provider, &manifest)?;
+    let mut command =
+        build_docker_run_command(provider_config.files(), &manifest, &docker_launch_config)
+            .context("failed to build Docker launch command")?;
     let status = command.status().context("failed to execute Docker")?;
 
     Ok(exit_code_from_status(status))
 }
 
-fn write_codex_home(
+fn write_provider_config_files(
     provider: &CodexProvider,
     manifest: &WorkspaceManifest,
-    codex_home_path: &Path,
-) -> Result<CodexHome> {
-    fs::create_dir_all(codex_home_path).with_context(|| {
-        format!(
-            "failed to create Codex home directory '{}'",
-            codex_home_path.display()
-        )
-    })?;
+) -> Result<RunScopedProviderConfig> {
+    let config_dir = create_run_scoped_config_dir()?;
 
-    let auth_path = codex_home_path.join("auth.json");
-    let config_path = codex_home_path.join("config.toml");
+    let auth_path = config_dir.join("auth.json");
+    let config_path = config_dir.join("config.toml");
     fs::write(&auth_path, provider.auth_json()).with_context(|| {
         format!(
             "failed to write provider auth file '{}'",
@@ -205,7 +197,10 @@ fn write_codex_home(
         )
     })?;
 
-    Ok(CodexHome::new(codex_home_path.to_path_buf()))
+    Ok(RunScopedProviderConfig::new(
+        config_dir,
+        ProviderConfigFiles::new(auth_path, config_path),
+    ))
 }
 
 fn trusted_workspace_config(provider_config_toml: &str, manifest: &WorkspaceManifest) -> String {
@@ -227,6 +222,24 @@ fn trusted_workspace_config(provider_config_toml: &str, manifest: &WorkspaceMani
 fn create_host_directory(path: &Path, label: &str) -> Result<()> {
     fs::create_dir_all(path)
         .with_context(|| format!("failed to create {label} directory '{}'", path.display()))
+}
+
+fn create_run_scoped_config_dir() -> Result<PathBuf> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before the Unix epoch")?
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "codex-ws-provider-{}-{timestamp}",
+        std::process::id()
+    ));
+    fs::create_dir(&path).with_context(|| {
+        format!(
+            "failed to create run-scoped provider config directory '{}'",
+            path.display()
+        )
+    })?;
+    Ok(path)
 }
 
 fn ensure_default_image(image: &str) -> Result<()> {
@@ -298,14 +311,31 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+#[derive(Debug)]
+struct RunScopedProviderConfig {
+    directory: PathBuf,
+    files: ProviderConfigFiles,
+}
+
+impl RunScopedProviderConfig {
+    fn new(directory: PathBuf, files: ProviderConfigFiles) -> Self {
+        Self { directory, files }
+    }
+
+    fn files(&self) -> &ProviderConfigFiles {
+        &self.files
+    }
+}
+
+impl Drop for RunScopedProviderConfig {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
-
-    static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn select_provider_returns_matching_provider() {
@@ -339,8 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn write_codex_home_writes_auth_json_and_config_toml() {
-        let temp_dir = TestTempDir::create();
+    fn write_provider_config_files_writes_auth_json_and_config_toml() {
         let provider = CodexProvider::new(
             "primary".to_owned(),
             "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}".to_owned(),
@@ -353,16 +382,16 @@ mod tests {
         )
         .expect("manifest should be valid");
 
-        let codex_home = write_codex_home(&provider, &manifest, temp_dir.path())
-            .expect("Codex home should be written");
+        let provider_config = write_provider_config_files(&provider, &manifest)
+            .expect("provider config files should be written");
 
         assert_eq!(
-            fs::read_to_string(codex_home.path().join("auth.json"))
+            fs::read_to_string(provider_config.files().auth_path())
                 .expect("auth file should be readable"),
             "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}"
         );
         assert_eq!(
-            fs::read_to_string(codex_home.path().join("config.toml"))
+            fs::read_to_string(provider_config.files().config_path())
                 .expect("config file should be readable"),
             "model = \"gpt-5.5\"\n\n[projects.\"/workspace/1\"]\ntrust_level = \"trusted\"\n\n"
         );
@@ -434,36 +463,5 @@ mod tests {
 
         assert!(config.contains("[projects.\"/workspace/1\"]\ntrust_level = \"trusted\""));
         assert!(config.contains("[projects.\"/workspace/2\"]\ntrust_level = \"trusted\""));
-    }
-
-    #[derive(Debug)]
-    struct TestTempDir {
-        path: PathBuf,
-    }
-
-    impl TestTempDir {
-        fn create() -> Self {
-            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system clock should be after Unix epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "codex-ws-app-test-{}-{timestamp}-{counter}",
-                std::process::id(),
-            ));
-            fs::create_dir(&path).expect("temporary test directory should be created");
-            Self { path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl Drop for TestTempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
     }
 }

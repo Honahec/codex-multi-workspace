@@ -27,8 +27,8 @@ sandbox at launch time.
 - [x] Implemented provider filtering for `app_type == "codex"`.
 - [x] Mapped provider fields into internal Rust types:
   - `name`
-  - `settings.config.auth`
-  - `settings.config.config`
+  - `settings_config.auth`
+  - `settings_config.config`
 - [x] Added unit tests for provider filtering and mapping.
 - [x] Defined the workspace manifest schema.
 - [x] Implemented parsing workspace manifests from YAML.
@@ -44,6 +44,8 @@ sandbox at launch time.
 - [x] Added integration-style tests for Docker launch command construction.
 - [x] Wired the CLI to load providers, parse manifests, validate folders, create session
   directories, and execute Docker.
+- [x] Fixed provider loading for the real `settings_config` column shape.
+- [x] Added generated host config files for provider auth JSON and config TOML before Docker launch.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

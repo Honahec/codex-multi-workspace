@@ -2,14 +2,15 @@ use std::path::Path;
 
 use rusqlite::Connection;
 use serde::Deserialize;
+use serde_json::Value;
 use thiserror::Error;
 
 /// Codex provider configuration loaded from the local configuration database.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexProvider {
     name: String,
-    auth: String,
-    config: String,
+    auth_json: String,
+    config_toml: String,
 }
 
 impl CodexProvider {
@@ -18,15 +19,19 @@ impl CodexProvider {
     /// # Arguments
     ///
     /// * `name` - Human-readable provider name from the configuration database.
-    /// * `auth` - Auth configuration payload for the Codex CLI.
-    /// * `config` - Runtime configuration payload for the Codex CLI.
+    /// * `auth_json` - Auth JSON payload for the Codex CLI.
+    /// * `config_toml` - Runtime TOML configuration payload for the Codex CLI.
     ///
     /// # Returns
     ///
     /// A provider value with owned fields.
     #[must_use]
-    pub fn new(name: String, auth: String, config: String) -> Self {
-        Self { name, auth, config }
+    pub fn new(name: String, auth_json: String, config_toml: String) -> Self {
+        Self {
+            name,
+            auth_json,
+            config_toml,
+        }
     }
 
     /// Return the provider name.
@@ -39,24 +44,24 @@ impl CodexProvider {
         &self.name
     }
 
-    /// Return the provider auth payload.
+    /// Return the provider auth JSON payload.
     ///
     /// # Returns
     ///
-    /// The provider auth payload as a borrowed string slice.
+    /// The provider auth JSON payload as a borrowed string slice.
     #[must_use]
-    pub fn auth(&self) -> &str {
-        &self.auth
+    pub fn auth_json(&self) -> &str {
+        &self.auth_json
     }
 
-    /// Return the provider config payload.
+    /// Return the provider config TOML payload.
     ///
     /// # Returns
     ///
-    /// The provider config payload as a borrowed string slice.
+    /// The provider config TOML payload as a borrowed string slice.
     #[must_use]
-    pub fn config(&self) -> &str {
-        &self.config
+    pub fn config_toml(&self) -> &str {
+        &self.config_toml
     }
 }
 
@@ -75,16 +80,15 @@ pub enum ProviderError {
         /// JSON parsing error returned by `serde_json`.
         source: serde_json::Error,
     },
+
+    /// The providers table does not expose a supported Codex configuration shape.
+    #[error("providers table must contain a settings_config column")]
+    UnsupportedSchema,
 }
 
 #[derive(Debug, Deserialize)]
-struct ProviderSettings {
-    config: ProviderConfig,
-}
-
-#[derive(Debug, Deserialize)]
-struct ProviderConfig {
-    auth: String,
+struct ProviderSettingsConfig {
+    auth: Value,
     config: String,
 }
 
@@ -124,8 +128,30 @@ pub fn load_codex_providers(database_path: &Path) -> Result<Vec<CodexProvider>, 
 pub fn load_codex_providers_from_connection(
     connection: &Connection,
 ) -> Result<Vec<CodexProvider>, ProviderError> {
-    let mut statement = connection
-        .prepare("SELECT name, settings FROM providers WHERE app_type = ?1 ORDER BY rowid ASC")?;
+    let columns = provider_table_columns(connection)?;
+    if columns.iter().any(|column| column == "settings_config") {
+        return load_codex_providers_from_settings_config_column(connection);
+    }
+
+    Err(ProviderError::UnsupportedSchema)
+}
+
+fn provider_table_columns(connection: &Connection) -> Result<Vec<String>, ProviderError> {
+    let mut statement = connection.prepare("PRAGMA table_info(providers)")?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let mut columns = Vec::new();
+    for row in rows {
+        columns.push(row?);
+    }
+    Ok(columns)
+}
+
+fn load_codex_providers_from_settings_config_column(
+    connection: &Connection,
+) -> Result<Vec<CodexProvider>, ProviderError> {
+    let mut statement = connection.prepare(
+        "SELECT name, settings_config FROM providers WHERE app_type = ?1 ORDER BY rowid ASC",
+    )?;
     let rows = statement.query_map(["codex"], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
@@ -134,11 +160,13 @@ pub fn load_codex_providers_from_connection(
     for row in rows {
         let (name, settings_json) = row?;
         let settings = parse_settings(&name, &settings_json)?;
-        providers.push(CodexProvider::new(
-            name,
-            settings.config.auth,
-            settings.config.config,
-        ));
+        let auth_json = serde_json::to_string_pretty(&settings.auth).map_err(|source| {
+            ProviderError::SettingsJson {
+                provider_name: name.clone(),
+                source,
+            }
+        })?;
+        providers.push(CodexProvider::new(name, auth_json, settings.config));
     }
 
     Ok(providers)
@@ -147,7 +175,7 @@ pub fn load_codex_providers_from_connection(
 fn parse_settings(
     provider_name: &str,
     settings_json: &str,
-) -> Result<ProviderSettings, ProviderError> {
+) -> Result<ProviderSettingsConfig, ProviderError> {
     serde_json::from_str(settings_json).map_err(|source| ProviderError::SettingsJson {
         provider_name: provider_name.to_owned(),
         source,
@@ -165,7 +193,7 @@ mod tests {
                 "CREATE TABLE providers (
                     name TEXT NOT NULL,
                     app_type TEXT NOT NULL,
-                    settings TEXT NOT NULL
+                    settings_config TEXT NOT NULL
                 )",
                 [],
             )
@@ -178,21 +206,21 @@ mod tests {
         let connection = connection_with_providers();
         connection
             .execute(
-                "INSERT INTO providers (name, app_type, settings) VALUES (?1, ?2, ?3)",
+                "INSERT INTO providers (name, app_type, settings_config) VALUES (?1, ?2, ?3)",
                 [
                     "primary",
                     "codex",
-                    r#"{"config":{"auth":"auth.json","config":"config.toml"}}"#,
+                    r#"{"auth":{"OPENAI_API_KEY":"test-key"},"config":"model = \"gpt-5.5\"\n"}"#,
                 ],
             )
             .expect("codex provider row should insert");
         connection
             .execute(
-                "INSERT INTO providers (name, app_type, settings) VALUES (?1, ?2, ?3)",
+                "INSERT INTO providers (name, app_type, settings_config) VALUES (?1, ?2, ?3)",
                 [
                     "other",
                     "claude",
-                    r#"{"config":{"auth":"ignored","config":"ignored"}}"#,
+                    r#"{"auth":{"OPENAI_API_KEY":"ignored"},"config":"ignored"}"#,
                 ],
             )
             .expect("non-codex provider row should insert");
@@ -204,8 +232,8 @@ mod tests {
             providers,
             vec![CodexProvider::new(
                 "primary".to_owned(),
-                "auth.json".to_owned(),
-                "config.toml".to_owned()
+                "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}".to_owned(),
+                "model = \"gpt-5.5\"\n".to_owned()
             )]
         );
     }
@@ -215,7 +243,7 @@ mod tests {
         let connection = connection_with_providers();
         connection
             .execute(
-                "INSERT INTO providers (name, app_type, settings) VALUES (?1, ?2, ?3)",
+                "INSERT INTO providers (name, app_type, settings_config) VALUES (?1, ?2, ?3)",
                 ["broken", "codex", "{}"],
             )
             .expect("broken provider row should insert");

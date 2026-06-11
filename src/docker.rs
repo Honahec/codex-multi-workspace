@@ -4,7 +4,6 @@ use std::process::Command;
 use thiserror::Error;
 
 use crate::manifest::WorkspaceManifest;
-use crate::provider::CodexProvider;
 
 const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
@@ -94,11 +93,58 @@ pub enum DockerError {
     },
 }
 
+/// Codex configuration files written on the host before launching Docker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderConfigFiles {
+    auth_path: PathBuf,
+    config_path: PathBuf,
+}
+
+impl ProviderConfigFiles {
+    /// Create provider configuration file paths.
+    ///
+    /// # Arguments
+    ///
+    /// * `auth_path` - Host path to the generated Codex auth JSON file.
+    /// * `config_path` - Host path to the generated Codex config TOML file.
+    ///
+    /// # Returns
+    ///
+    /// Provider configuration file paths used for Docker mounts.
+    #[must_use]
+    pub fn new(auth_path: PathBuf, config_path: PathBuf) -> Self {
+        Self {
+            auth_path,
+            config_path,
+        }
+    }
+
+    /// Return the host auth JSON path.
+    ///
+    /// # Returns
+    ///
+    /// Host path to the generated Codex auth JSON file.
+    #[must_use]
+    pub fn auth_path(&self) -> &Path {
+        &self.auth_path
+    }
+
+    /// Return the host config TOML path.
+    ///
+    /// # Returns
+    ///
+    /// Host path to the generated Codex config TOML file.
+    #[must_use]
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
+    }
+}
+
 /// Build a Docker command for launching a Codex workspace sandbox.
 ///
 /// # Arguments
 ///
-/// * `provider` - Selected Codex provider configuration.
+/// * `provider_files` - Generated provider configuration files mounted into the sandbox.
 /// * `manifest` - Validated workspace manifest.
 /// * `launch_config` - Docker image and host path settings.
 ///
@@ -110,18 +156,18 @@ pub enum DockerError {
 ///
 /// Returns [`DockerError::NoWorkspaceFolders`] when the manifest has no folders.
 pub fn build_docker_run_command(
-    provider: &CodexProvider,
+    provider_files: &ProviderConfigFiles,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Command, DockerError> {
-    let args = docker_run_args(provider, manifest, launch_config)?;
+    let args = docker_run_args(provider_files, manifest, launch_config)?;
     let mut command = Command::new("docker");
     command.args(args);
     Ok(command)
 }
 
 fn docker_run_args(
-    provider: &CodexProvider,
+    provider_files: &ProviderConfigFiles,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Vec<String>, DockerError> {
@@ -144,12 +190,12 @@ fn docker_run_args(
     }
 
     args.extend(volume_args(
-        Path::new(provider.auth()),
+        provider_files.auth_path(),
         &format!("{CONTAINER_CODEX_DIR}/auth.json"),
         true,
     ));
     args.extend(volume_args(
-        Path::new(provider.config()),
+        provider_files.config_path(),
         &format!("{CONTAINER_CODEX_DIR}/config.toml"),
         true,
     ));
@@ -200,11 +246,10 @@ mod tests {
     use super::*;
     use crate::manifest::SandboxConfig;
 
-    fn test_provider() -> CodexProvider {
-        CodexProvider::new(
-            "primary".to_owned(),
-            "/host/codex/auth.json".to_owned(),
-            "/host/codex/config.toml".to_owned(),
+    fn test_provider_files() -> ProviderConfigFiles {
+        ProviderConfigFiles::new(
+            PathBuf::from("/host/codex/auth.json"),
+            PathBuf::from("/host/codex/config.toml"),
         )
     }
 
@@ -230,7 +275,7 @@ mod tests {
     #[test]
     fn docker_run_args_mounts_provider_workspace_and_sessions() {
         let args = docker_run_args(
-            &test_provider(),
+            &test_provider_files(),
             &test_manifest(false),
             &test_launch_config(),
         )
@@ -267,7 +312,7 @@ mod tests {
     #[test]
     fn docker_run_args_omits_network_none_when_network_is_enabled() {
         let args = docker_run_args(
-            &test_provider(),
+            &test_provider_files(),
             &test_manifest(true),
             &test_launch_config(),
         )

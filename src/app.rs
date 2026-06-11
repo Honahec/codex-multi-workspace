@@ -5,7 +5,7 @@ use std::process::{ExitCode, ExitStatus};
 use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
-use crate::docker::{DockerLaunchConfig, build_docker_run_command};
+use crate::docker::{DockerLaunchConfig, ProviderConfigFiles, build_docker_run_command};
 use crate::manifest::{load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
 
@@ -147,11 +147,49 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
         )
     })?;
 
-    let mut command = build_docker_run_command(&provider, &manifest, config.docker_launch_config())
-        .context("failed to build Docker launch command")?;
+    let provider_files = write_provider_config_files(
+        &provider,
+        &config
+            .docker_launch_config()
+            .sessions_root()
+            .join(manifest.name())
+            .join("config"),
+    )?;
+    let mut command =
+        build_docker_run_command(&provider_files, &manifest, config.docker_launch_config())
+            .context("failed to build Docker launch command")?;
     let status = command.status().context("failed to execute Docker")?;
 
     Ok(exit_code_from_status(status))
+}
+
+fn write_provider_config_files(
+    provider: &CodexProvider,
+    config_dir: &Path,
+) -> Result<ProviderConfigFiles> {
+    fs::create_dir_all(config_dir).with_context(|| {
+        format!(
+            "failed to create provider config directory '{}'",
+            config_dir.display()
+        )
+    })?;
+
+    let auth_path = config_dir.join("auth.json");
+    let config_path = config_dir.join("config.toml");
+    fs::write(&auth_path, provider.auth_json()).with_context(|| {
+        format!(
+            "failed to write provider auth file '{}'",
+            auth_path.display()
+        )
+    })?;
+    fs::write(&config_path, provider.config_toml()).with_context(|| {
+        format!(
+            "failed to write provider config file '{}'",
+            config_path.display()
+        )
+    })?;
+
+    Ok(ProviderConfigFiles::new(auth_path, config_path))
 }
 
 fn select_provider(providers: Vec<CodexProvider>, provider_name: &str) -> Result<CodexProvider> {
@@ -192,7 +230,12 @@ fn home_dir() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
+
+    static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn select_provider_returns_matching_provider() {
@@ -223,5 +266,58 @@ mod tests {
             expand_home_path(PathBuf::from("/tmp/workspace.yaml")),
             PathBuf::from("/tmp/workspace.yaml")
         );
+    }
+
+    #[test]
+    fn write_provider_config_files_writes_auth_json_and_config_toml() {
+        let temp_dir = TestTempDir::create();
+        let provider = CodexProvider::new(
+            "primary".to_owned(),
+            "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}".to_owned(),
+            "model = \"gpt-5.5\"\n".to_owned(),
+        );
+
+        let files = write_provider_config_files(&provider, temp_dir.path())
+            .expect("provider config files should be written");
+
+        assert_eq!(
+            fs::read_to_string(files.auth_path()).expect("auth file should be readable"),
+            "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}"
+        );
+        assert_eq!(
+            fs::read_to_string(files.config_path()).expect("config file should be readable"),
+            "model = \"gpt-5.5\"\n"
+        );
+    }
+
+    #[derive(Debug)]
+    struct TestTempDir {
+        path: PathBuf,
+    }
+
+    impl TestTempDir {
+        fn create() -> Self {
+            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "codex-ws-app-test-{}-{timestamp}-{counter}",
+                std::process::id(),
+            ));
+            fs::create_dir(&path).expect("temporary test directory should be created");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 }

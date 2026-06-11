@@ -53,6 +53,8 @@ sandbox at launch time.
   uses `codex` as the image entrypoint.
 - [x] Added automatic local build of the derived Docker image when it is missing.
 - [x] Switched the derived image build to npm for simpler build-time Codex CLI installation.
+- [x] Linked Codex CLI and Node into `/usr/local/bin` so the image entrypoint works without
+  shell startup PATH initialization.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

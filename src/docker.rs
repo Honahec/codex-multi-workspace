@@ -12,6 +12,9 @@ const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 /// Default Codex CLI Docker image used for sandbox launches.
 pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
 
+/// Version label expected on the locally built Codex workspace image.
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "2";
+
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerLaunchConfig {

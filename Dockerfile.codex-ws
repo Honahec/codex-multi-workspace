@@ -1,5 +1,9 @@
 FROM ghcr.io/openai/codex-universal:latest
 
-RUN bash -lc 'npm install -g @openai/codex'
+LABEL org.openai.codex-ws.image-version="2"
 
-ENTRYPOINT ["codex"]
+RUN bash -lc 'npm install -g @openai/codex && \
+    ln -sf "$(command -v node)" /usr/local/bin/node && \
+    ln -sf "$(command -v codex)" /usr/local/bin/codex'
+
+ENTRYPOINT ["/usr/local/bin/codex"]

@@ -6,7 +6,8 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
 use crate::docker::{
-    DEFAULT_CODEX_IMAGE, DockerLaunchConfig, ProviderConfigFiles, build_docker_run_command,
+    DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
+    build_docker_run_command,
 };
 use crate::manifest::{load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
@@ -200,11 +201,18 @@ fn ensure_default_image(image: &str) -> Result<()> {
         return Ok(());
     }
 
-    let inspect_status = Command::new("docker")
-        .args(["image", "inspect", image])
-        .status()
+    let inspect_output = Command::new("docker")
+        .args([
+            "image",
+            "inspect",
+            image,
+            "--format",
+            "{{ index .Config.Labels \"org.openai.codex-ws.image-version\" }}",
+        ])
+        .output()
         .context("failed to inspect Docker image")?;
-    if inspect_status.success() {
+    let image_version = String::from_utf8_lossy(&inspect_output.stdout);
+    if inspect_output.status.success() && image_version.trim() == DEFAULT_CODEX_IMAGE_VERSION {
         return Ok(());
     }
 

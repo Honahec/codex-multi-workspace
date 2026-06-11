@@ -31,6 +31,10 @@ workspace conversation sessions under a predictable host path.
   sessions root so Docker can access them on hosts with restricted shared paths.
 - [x] Mounted host `~/.agents/skills` into the container read-only when the directory
   exists, while allowing startup without skills.
+- [x] Added a workspace configuration registry under `~/.codex-ws/config/workspace`.
+- [x] Added `workspace ls` for listing saved workspace manifests.
+- [x] Added `workspace add <workspace-name>` for creating and editing a templated manifest.
+- [x] Allowed `run --workspace <workspace-name>` to resolve saved workspace manifests.
 
 ## Pending
 

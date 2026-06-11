@@ -15,6 +15,9 @@ pub struct Cli {
 pub enum Command {
     /// Launch a Codex sandbox for a workspace manifest.
     Run(RunArgs),
+
+    /// Manage saved workspace manifests.
+    Workspace(WorkspaceArgs),
 }
 
 /// Arguments used to launch a workspace sandbox.
@@ -24,8 +27,8 @@ pub struct RunArgs {
     #[arg(short, long)]
     pub provider: String,
 
-    /// Path to the workspace manifest YAML file.
-    #[arg(short, long, value_name = "PATH")]
+    /// Workspace name or path to a workspace manifest YAML file.
+    #[arg(short, long, value_name = "WORKSPACE")]
     pub workspace: PathBuf,
 
     /// Path to the local provider configuration database.
@@ -39,4 +42,40 @@ pub struct RunArgs {
     /// Docker image containing the Codex CLI.
     #[arg(long, value_name = "IMAGE")]
     pub image: Option<String>,
+}
+
+/// Arguments used to manage saved workspace manifests.
+#[derive(Debug, Parser)]
+pub struct WorkspaceArgs {
+    #[command(subcommand)]
+    pub command: WorkspaceCommand,
+}
+
+/// Workspace manifest management commands.
+#[derive(Debug, Subcommand)]
+pub enum WorkspaceCommand {
+    /// List saved workspace manifests.
+    Ls(WorkspaceLsArgs),
+
+    /// Create or edit a saved workspace manifest.
+    Add(WorkspaceAddArgs),
+}
+
+/// Arguments used to list saved workspace manifests.
+#[derive(Debug, Parser)]
+pub struct WorkspaceLsArgs {
+    /// Host directory used to store codex-ws state and saved workspace manifests.
+    #[arg(long, value_name = "PATH", default_value = "~/.codex-ws")]
+    pub sessions_root: PathBuf,
+}
+
+/// Arguments used to add a saved workspace manifest.
+#[derive(Debug, Parser)]
+pub struct WorkspaceAddArgs {
+    /// Workspace name used for the saved manifest file.
+    pub workspace_name: String,
+
+    /// Host directory used to store codex-ws state and saved workspace manifests.
+    #[arg(long, value_name = "PATH", default_value = "~/.codex-ws")]
+    pub sessions_root: PathBuf,
 }

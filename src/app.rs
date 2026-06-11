@@ -12,6 +12,7 @@ use crate::docker::{
 };
 use crate::manifest::{WorkspaceManifest, load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
+use crate::workspace::{expand_home_path, resolve_workspace_path};
 
 /// Run configuration derived from CLI arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,18 +64,21 @@ impl RunConfig {
     /// # Returns
     ///
     /// A run configuration with shell-style home-directory paths expanded.
-    #[must_use]
-    pub fn from_args(args: RunArgs) -> Self {
-        Self::new(
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a workspace name cannot be resolved.
+    pub fn from_args(args: RunArgs) -> Result<Self> {
+        let sessions_root = expand_home_path(args.sessions_root);
+        let workspace_path = resolve_workspace_path(args.workspace, &sessions_root)?;
+
+        Ok(Self::new(
             args.provider,
-            expand_home_path(args.workspace),
+            workspace_path,
             expand_home_path(args.config_db),
             args.image,
-            DockerLaunchConfig::new(
-                DEFAULT_CODEX_IMAGE.to_owned(),
-                expand_home_path(args.sessions_root),
-            ),
-        )
+            DockerLaunchConfig::new(DEFAULT_CODEX_IMAGE.to_owned(), sessions_root),
+        ))
     }
 
     /// Return the selected provider name.
@@ -303,28 +307,6 @@ fn exit_code_from_status(status: ExitStatus) -> ExitCode {
     }
 }
 
-fn expand_home_path(path: PathBuf) -> PathBuf {
-    let Some(path_text) = path.to_str() else {
-        return path;
-    };
-
-    if path_text == "~" {
-        return home_dir().unwrap_or(path);
-    }
-
-    if let Some(rest) = path_text.strip_prefix("~/")
-        && let Some(home) = home_dir()
-    {
-        return home.join(rest);
-    }
-
-    path
-}
-
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
 #[derive(Debug)]
 struct RunScopedProviderConfig {
     directory: PathBuf,
@@ -376,14 +358,6 @@ mod tests {
             .to_string();
 
         assert_eq!(error, "Codex provider 'missing' was not found");
-    }
-
-    #[test]
-    fn expand_home_path_leaves_absolute_paths_unchanged() {
-        assert_eq!(
-            expand_home_path(PathBuf::from("/tmp/workspace.yaml")),
-            PathBuf::from("/tmp/workspace.yaml")
-        );
     }
 
     #[test]

@@ -17,3 +17,6 @@ pub mod provider;
 
 /// Codex Universal runtime language selection.
 pub mod runtime;
+
+/// Saved workspace manifest management.
+pub mod workspace;

@@ -13,7 +13,7 @@ const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "2";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "3";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,23 @@ impl DockerLaunchConfig {
         &self.image
     }
 
+    /// Return a copy of this configuration with a different Docker image.
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - Docker image that should replace the current image.
+    ///
+    /// # Returns
+    ///
+    /// A Docker launch configuration with the same host paths and a new image.
+    #[must_use]
+    pub fn with_image(&self, image: String) -> Self {
+        Self {
+            image,
+            sessions_root: self.sessions_root.clone(),
+        }
+    }
+
     /// Return the sessions root directory.
     ///
     /// # Returns
@@ -74,6 +91,20 @@ impl DockerLaunchConfig {
     pub fn workspace_sessions_path(&self, workspace_name: &str) -> PathBuf {
         self.sessions_root().join(workspace_name).join("sessions")
     }
+
+    /// Return the host Codex home path for one workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_name` - Workspace name used as the host Codex home directory key.
+    ///
+    /// # Returns
+    ///
+    /// Host path mounted as `/root/.codex` inside the sandbox.
+    #[must_use]
+    pub fn workspace_codex_home_path(&self, workspace_name: &str) -> PathBuf {
+        self.sessions_root().join(workspace_name).join("codex-home")
+    }
 }
 
 impl Default for DockerLaunchConfig {
@@ -96,50 +127,35 @@ pub enum DockerError {
     },
 }
 
-/// Codex configuration files written on the host before launching Docker.
+/// Codex home directory written on the host before launching Docker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderConfigFiles {
-    auth_path: PathBuf,
-    config_path: PathBuf,
+pub struct CodexHome {
+    path: PathBuf,
 }
 
-impl ProviderConfigFiles {
-    /// Create provider configuration file paths.
+impl CodexHome {
+    /// Create a Codex home directory mount.
     ///
     /// # Arguments
     ///
-    /// * `auth_path` - Host path to the generated Codex auth JSON file.
-    /// * `config_path` - Host path to the generated Codex config TOML file.
+    /// * `path` - Host path to the generated writable Codex home directory.
     ///
     /// # Returns
     ///
-    /// Provider configuration file paths used for Docker mounts.
+    /// Codex home directory mount used for Docker.
     #[must_use]
-    pub fn new(auth_path: PathBuf, config_path: PathBuf) -> Self {
-        Self {
-            auth_path,
-            config_path,
-        }
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
     }
 
-    /// Return the host auth JSON path.
+    /// Return the host Codex home path.
     ///
     /// # Returns
     ///
-    /// Host path to the generated Codex auth JSON file.
+    /// Host path to the generated writable Codex home directory.
     #[must_use]
-    pub fn auth_path(&self) -> &Path {
-        &self.auth_path
-    }
-
-    /// Return the host config TOML path.
-    ///
-    /// # Returns
-    ///
-    /// Host path to the generated Codex config TOML file.
-    #[must_use]
-    pub fn config_path(&self) -> &Path {
-        &self.config_path
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 
@@ -147,7 +163,7 @@ impl ProviderConfigFiles {
 ///
 /// # Arguments
 ///
-/// * `provider_files` - Generated provider configuration files mounted into the sandbox.
+/// * `codex_home` - Generated writable Codex home directory mounted into the sandbox.
 /// * `manifest` - Validated workspace manifest.
 /// * `launch_config` - Docker image and host path settings.
 ///
@@ -159,18 +175,18 @@ impl ProviderConfigFiles {
 ///
 /// Returns [`DockerError::NoWorkspaceFolders`] when the manifest has no folders.
 pub fn build_docker_run_command(
-    provider_files: &ProviderConfigFiles,
+    codex_home: &CodexHome,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Command, DockerError> {
-    let args = docker_run_args(provider_files, manifest, launch_config)?;
+    let args = docker_run_args(codex_home, manifest, launch_config)?;
     let mut command = Command::new("docker");
     command.args(args);
     Ok(command)
 }
 
 fn docker_run_args(
-    provider_files: &ProviderConfigFiles,
+    codex_home: &CodexHome,
     manifest: &WorkspaceManifest,
     launch_config: &DockerLaunchConfig,
 ) -> Result<Vec<String>, DockerError> {
@@ -192,17 +208,7 @@ fn docker_run_args(
         args.extend(["--network".to_owned(), "none".to_owned()]);
     }
 
-    args.extend(volume_args(
-        provider_files.auth_path(),
-        &format!("{CONTAINER_CODEX_DIR}/auth.json"),
-        true,
-    ));
-    args.extend(volume_args(
-        provider_files.config_path(),
-        &format!("{CONTAINER_CODEX_DIR}/config.toml"),
-        true,
-    ));
-
+    args.extend(volume_args(codex_home.path(), CONTAINER_CODEX_DIR, false));
     let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
 
@@ -248,11 +254,8 @@ mod tests {
     use super::*;
     use crate::manifest::SandboxConfig;
 
-    fn test_provider_files() -> ProviderConfigFiles {
-        ProviderConfigFiles::new(
-            PathBuf::from("/host/codex/auth.json"),
-            PathBuf::from("/host/codex/config.toml"),
-        )
+    fn test_codex_home() -> CodexHome {
+        CodexHome::new(PathBuf::from("/host/.codex-ws/workspace-name/codex-home"))
     }
 
     fn test_manifest(network: bool) -> WorkspaceManifest {
@@ -274,7 +277,7 @@ mod tests {
     #[test]
     fn docker_run_args_mounts_provider_workspace_and_sessions() {
         let args = docker_run_args(
-            &test_provider_files(),
+            &test_codex_home(),
             &test_manifest(false),
             &test_launch_config(),
         )
@@ -291,9 +294,7 @@ mod tests {
                 "--network",
                 "none",
                 "-v",
-                "/host/codex/auth.json:/root/.codex/auth.json:ro",
-                "-v",
-                "/host/codex/config.toml:/root/.codex/config.toml:ro",
+                "/host/.codex-ws/workspace-name/codex-home:/root/.codex",
                 "-v",
                 "/host/.codex-ws/workspace-name/sessions:/root/.codex/sessions",
                 "-v",
@@ -310,7 +311,7 @@ mod tests {
     #[test]
     fn docker_run_args_omits_network_none_when_network_is_enabled() {
         let args = docker_run_args(
-            &test_provider_files(),
+            &test_codex_home(),
             &test_manifest(true),
             &test_launch_config(),
         )

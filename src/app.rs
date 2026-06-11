@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::cli::RunArgs;
 use crate::docker::{
-    DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
+    CodexHome, DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig,
     build_docker_run_command,
 };
 use crate::manifest::{WorkspaceManifest, load_workspace_manifest, validate_workspace_folders};
@@ -18,6 +18,7 @@ pub struct RunConfig {
     provider_name: String,
     workspace_path: PathBuf,
     provider_database_path: PathBuf,
+    image_override: Option<String>,
     docker_launch_config: DockerLaunchConfig,
 }
 
@@ -29,6 +30,7 @@ impl RunConfig {
     /// * `provider_name` - Provider name selected by the user.
     /// * `workspace_path` - Path to the workspace manifest YAML file.
     /// * `provider_database_path` - Path to the local provider configuration database.
+    /// * `image_override` - Optional CLI-selected image for this launch.
     /// * `docker_launch_config` - Docker image and sessions-root settings.
     ///
     /// # Returns
@@ -39,12 +41,14 @@ impl RunConfig {
         provider_name: String,
         workspace_path: PathBuf,
         provider_database_path: PathBuf,
+        image_override: Option<String>,
         docker_launch_config: DockerLaunchConfig,
     ) -> Self {
         Self {
             provider_name,
             workspace_path,
             provider_database_path,
+            image_override,
             docker_launch_config,
         }
     }
@@ -64,7 +68,11 @@ impl RunConfig {
             args.provider,
             expand_home_path(args.workspace),
             expand_home_path(args.config_db),
-            DockerLaunchConfig::new(args.image, expand_home_path(args.sessions_root)),
+            args.image,
+            DockerLaunchConfig::new(
+                DEFAULT_CODEX_IMAGE.to_owned(),
+                expand_home_path(args.sessions_root),
+            ),
         )
     }
 
@@ -107,6 +115,18 @@ impl RunConfig {
     pub fn docker_launch_config(&self) -> &DockerLaunchConfig {
         &self.docker_launch_config
     }
+
+    fn effective_docker_launch_config(&self, manifest: &WorkspaceManifest) -> DockerLaunchConfig {
+        if let Some(image) = &self.image_override {
+            return self.docker_launch_config.with_image(image.clone());
+        }
+
+        if let Some(image) = manifest.runtime().image() {
+            return self.docker_launch_config.with_image(image.to_owned());
+        }
+
+        self.docker_launch_config.clone()
+    }
 }
 
 /// Execute the configured workspace launch.
@@ -139,44 +159,38 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
     })?;
 
     validate_workspace_folders(&manifest).context("workspace folder validation failed")?;
+    let docker_launch_config = config.effective_docker_launch_config(&manifest);
 
-    let sessions_path = config
-        .docker_launch_config()
-        .workspace_sessions_path(manifest.name());
+    let sessions_path = docker_launch_config.workspace_sessions_path(manifest.name());
     create_host_directory(&sessions_path, "workspace sessions")?;
-    ensure_default_image(config.docker_launch_config().image())?;
+    ensure_default_image(docker_launch_config.image())?;
 
-    let provider_files = write_provider_config_files(
+    let codex_home = write_codex_home(
         &provider,
         &manifest,
-        &config
-            .docker_launch_config()
-            .sessions_root()
-            .join(manifest.name())
-            .join("config"),
+        &docker_launch_config.workspace_codex_home_path(manifest.name()),
     )?;
-    let mut command =
-        build_docker_run_command(&provider_files, &manifest, config.docker_launch_config())
-            .context("failed to build Docker launch command")?;
+    let mut command = build_docker_run_command(&codex_home, &manifest, &docker_launch_config)
+        .context("failed to build Docker launch command")?;
     let status = command.status().context("failed to execute Docker")?;
 
     Ok(exit_code_from_status(status))
 }
 
-fn write_provider_config_files(
+fn write_codex_home(
     provider: &CodexProvider,
     manifest: &WorkspaceManifest,
-    config_dir: &Path,
-) -> Result<ProviderConfigFiles> {
-    fs::create_dir_all(config_dir).with_context(|| {
+    codex_home_path: &Path,
+) -> Result<CodexHome> {
+    fs::create_dir_all(codex_home_path).with_context(|| {
         format!(
-            "failed to create provider config directory '{}'",
-            config_dir.display()
+            "failed to create Codex home directory '{}'",
+            codex_home_path.display()
         )
     })?;
 
-    let auth_path = config_dir.join("auth.json");
-    let config_path = config_dir.join("config.toml");
+    let auth_path = codex_home_path.join("auth.json");
+    let config_path = codex_home_path.join("config.toml");
     fs::write(&auth_path, provider.auth_json()).with_context(|| {
         format!(
             "failed to write provider auth file '{}'",
@@ -191,7 +205,7 @@ fn write_provider_config_files(
         )
     })?;
 
-    Ok(ProviderConfigFiles::new(auth_path, config_path))
+    Ok(CodexHome::new(codex_home_path.to_path_buf()))
 }
 
 fn trusted_workspace_config(provider_config_toml: &str, manifest: &WorkspaceManifest) -> String {
@@ -325,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn write_provider_config_files_writes_auth_json_and_config_toml() {
+    fn write_codex_home_writes_auth_json_and_config_toml() {
         let temp_dir = TestTempDir::create();
         let provider = CodexProvider::new(
             "primary".to_owned(),
@@ -339,17 +353,69 @@ mod tests {
         )
         .expect("manifest should be valid");
 
-        let files = write_provider_config_files(&provider, &manifest, temp_dir.path())
-            .expect("provider config files should be written");
+        let codex_home = write_codex_home(&provider, &manifest, temp_dir.path())
+            .expect("Codex home should be written");
 
         assert_eq!(
-            fs::read_to_string(files.auth_path()).expect("auth file should be readable"),
+            fs::read_to_string(codex_home.path().join("auth.json"))
+                .expect("auth file should be readable"),
             "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}"
         );
         assert_eq!(
-            fs::read_to_string(files.config_path()).expect("config file should be readable"),
+            fs::read_to_string(codex_home.path().join("config.toml"))
+                .expect("config file should be readable"),
             "model = \"gpt-5.5\"\n\n[projects.\"/workspace/1\"]\ntrust_level = \"trusted\"\n\n"
         );
+    }
+
+    #[test]
+    fn effective_docker_launch_config_uses_manifest_runtime_image() {
+        let config = RunConfig::new(
+            "primary".to_owned(),
+            PathBuf::from("/tmp/workspace.yaml"),
+            PathBuf::from("/tmp/cc-switch.db"),
+            None,
+            DockerLaunchConfig::new(
+                DEFAULT_CODEX_IMAGE.to_owned(),
+                PathBuf::from("/host/.codex-ws"),
+            ),
+        );
+        let manifest = WorkspaceManifest::with_runtime(
+            "workspace".to_owned(),
+            vec![PathBuf::from("/host/project")],
+            crate::manifest::SandboxConfig::default(),
+            crate::manifest::RuntimeConfig::new(Some("rust-codex-ws:latest".to_owned())),
+        )
+        .expect("manifest should be valid");
+
+        let launch_config = config.effective_docker_launch_config(&manifest);
+
+        assert_eq!(launch_config.image(), "rust-codex-ws:latest");
+    }
+
+    #[test]
+    fn effective_docker_launch_config_prefers_cli_image_override() {
+        let config = RunConfig::new(
+            "primary".to_owned(),
+            PathBuf::from("/tmp/workspace.yaml"),
+            PathBuf::from("/tmp/cc-switch.db"),
+            Some("cli-codex-ws:latest".to_owned()),
+            DockerLaunchConfig::new(
+                DEFAULT_CODEX_IMAGE.to_owned(),
+                PathBuf::from("/host/.codex-ws"),
+            ),
+        );
+        let manifest = WorkspaceManifest::with_runtime(
+            "workspace".to_owned(),
+            vec![PathBuf::from("/host/project")],
+            crate::manifest::SandboxConfig::default(),
+            crate::manifest::RuntimeConfig::new(Some("manifest-codex-ws:latest".to_owned())),
+        )
+        .expect("manifest should be valid");
+
+        let launch_config = config.effective_docker_launch_config(&manifest);
+
+        assert_eq!(launch_config.image(), "cli-codex-ws:latest");
     }
 
     #[test]

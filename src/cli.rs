@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::docker::DEFAULT_CODEX_IMAGE;
-
 /// Launch and manage Codex CLI workspaces.
 #[derive(Debug, Parser)]
 #[command(name = "codex-ws", version, about)]
@@ -39,6 +37,6 @@ pub struct RunArgs {
     pub sessions_root: PathBuf,
 
     /// Docker image containing the Codex CLI.
-    #[arg(long, default_value = DEFAULT_CODEX_IMAGE)]
-    pub image: String,
+    #[arg(long, value_name = "IMAGE")]
+    pub image: Option<String>,
 }

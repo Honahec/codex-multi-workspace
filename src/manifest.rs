@@ -10,6 +10,7 @@ pub struct WorkspaceManifest {
     name: String,
     folders: Vec<PathBuf>,
     sandbox: SandboxConfig,
+    runtime: RuntimeConfig,
 }
 
 impl WorkspaceManifest {
@@ -34,6 +35,33 @@ impl WorkspaceManifest {
         folders: Vec<PathBuf>,
         sandbox: SandboxConfig,
     ) -> Result<Self, ManifestError> {
+        Self::with_runtime(name, folders, sandbox, RuntimeConfig::default())
+    }
+
+    /// Create a workspace manifest with runtime settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Stable workspace name used for session routing.
+    /// * `folders` - One or more project folders included in the workspace.
+    /// * `sandbox` - Runtime sandbox options applied when launching the sandbox.
+    /// * `runtime` - Container runtime image settings for this workspace.
+    ///
+    /// # Returns
+    ///
+    /// A validated workspace manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ManifestError::EmptyName`] when `name` is blank.
+    /// Returns [`ManifestError::NoFolders`] when no folders are provided.
+    /// Returns [`ManifestError::EmptyRuntimeImage`] when `runtime.image` is blank.
+    pub fn with_runtime(
+        name: String,
+        folders: Vec<PathBuf>,
+        sandbox: SandboxConfig,
+        runtime: RuntimeConfig,
+    ) -> Result<Self, ManifestError> {
         if name.trim().is_empty() {
             return Err(ManifestError::EmptyName);
         }
@@ -42,10 +70,15 @@ impl WorkspaceManifest {
             return Err(ManifestError::NoFolders);
         }
 
+        if runtime.image().is_some_and(|image| image.trim().is_empty()) {
+            return Err(ManifestError::EmptyRuntimeImage);
+        }
+
         Ok(Self {
             name,
             folders,
             sandbox,
+            runtime,
         })
     }
 
@@ -77,6 +110,16 @@ impl WorkspaceManifest {
     #[must_use]
     pub fn sandbox(&self) -> &SandboxConfig {
         &self.sandbox
+    }
+
+    /// Return container runtime options.
+    ///
+    /// # Returns
+    ///
+    /// The runtime configuration for this workspace.
+    #[must_use]
+    pub fn runtime(&self) -> &RuntimeConfig {
+        &self.runtime
     }
 }
 
@@ -112,6 +155,38 @@ impl SandboxConfig {
     }
 }
 
+/// Container runtime options loaded from a workspace manifest.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuntimeConfig {
+    image: Option<String>,
+}
+
+impl RuntimeConfig {
+    /// Create a runtime configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - Optional Docker image used for this workspace.
+    ///
+    /// # Returns
+    ///
+    /// A runtime configuration value.
+    #[must_use]
+    pub fn new(image: Option<String>) -> Self {
+        Self { image }
+    }
+
+    /// Return the workspace-specific Docker image.
+    ///
+    /// # Returns
+    ///
+    /// `Some(image)` when the manifest selects a runtime image, otherwise `None`.
+    #[must_use]
+    pub fn image(&self) -> Option<&str> {
+        self.image.as_deref()
+    }
+}
+
 /// Errors returned while loading or validating workspace manifests.
 #[derive(Debug, Error)]
 pub enum ManifestError {
@@ -136,6 +211,10 @@ pub enum ManifestError {
     #[error("workspace manifest must include at least one folder")]
     NoFolders,
 
+    /// The workspace runtime image was empty or only whitespace.
+    #[error("workspace manifest runtime image cannot be empty")]
+    EmptyRuntimeImage,
+
     /// A workspace folder path does not exist.
     #[error("workspace folder '{path}' does not exist")]
     FolderMissing {
@@ -157,6 +236,8 @@ struct RawWorkspaceManifest {
     folders: Vec<PathBuf>,
     #[serde(default)]
     sandbox: RawSandboxConfig,
+    #[serde(default)]
+    runtime: RawRuntimeConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -165,14 +246,20 @@ struct RawSandboxConfig {
     network: bool,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct RawRuntimeConfig {
+    image: Option<String>,
+}
+
 impl TryFrom<RawWorkspaceManifest> for WorkspaceManifest {
     type Error = ManifestError;
 
     fn try_from(raw: RawWorkspaceManifest) -> Result<Self, Self::Error> {
-        Self::new(
+        Self::with_runtime(
             raw.name,
             raw.folders,
             SandboxConfig::new(raw.sandbox.network),
+            RuntimeConfig::new(raw.runtime.image.map(|image| image.trim().to_owned())),
         )
     }
 }
@@ -315,6 +402,7 @@ sandbox:
             ]
         );
         assert!(manifest.sandbox().network());
+        assert_eq!(manifest.runtime().image(), None);
     }
 
     #[test]
@@ -331,6 +419,23 @@ folders:
         assert_eq!(manifest.name(), "single-project");
         assert_eq!(manifest.folders(), &[PathBuf::from("/projects/backend")]);
         assert!(!manifest.sandbox().network());
+        assert_eq!(manifest.runtime().image(), None);
+    }
+
+    #[test]
+    fn parse_workspace_manifest_supports_runtime_image() {
+        let manifest = parse_workspace_manifest(
+            r#"
+name: rust-project
+folders:
+  - /projects/rust-project
+runtime:
+  image: rust-codex-ws:latest
+"#,
+        )
+        .expect("manifest should parse");
+
+        assert_eq!(manifest.runtime().image(), Some("rust-codex-ws:latest"));
     }
 
     #[test]
@@ -358,6 +463,22 @@ folders: []
         .expect_err("empty folders should fail");
 
         assert!(matches!(error, ManifestError::NoFolders));
+    }
+
+    #[test]
+    fn parse_workspace_manifest_rejects_empty_runtime_image() {
+        let error = parse_workspace_manifest(
+            r#"
+name: workspace
+folders:
+  - /projects/backend
+runtime:
+  image: " "
+"#,
+        )
+        .expect_err("blank runtime image should fail");
+
+        assert!(matches!(error, ManifestError::EmptyRuntimeImage));
     }
 
     #[test]

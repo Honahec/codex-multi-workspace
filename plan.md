@@ -57,10 +57,18 @@ sandbox at launch time.
   shell startup PATH initialization.
 - [x] Pre-trusted generated container workspace paths in `config.toml` to avoid interactive trust
   writes against read-only config mounts.
+- [x] Mounted `/root/.codex` as a writable workspace Codex home so Codex can persist model and
+  trust settings while keeping sessions host-managed.
+- [x] Installed `bubblewrap` in the derived image to satisfy Codex sandbox prerequisites.
+- [x] Added per-workspace runtime image selection through `runtime.image` in workspace manifests.
+- [x] Kept command-line image selection as an explicit override for one-off launches.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.
 - [x] Ran `cargo build`.
+- [x] Rebuilt `codex-ws:latest` from `Dockerfile.codex-ws`.
+- [x] Verified the derived Docker image entrypoint, image version label, Codex CLI, and
+  `bubblewrap`.
 
 ## Pending
 

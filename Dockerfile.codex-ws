@@ -1,6 +1,10 @@
 FROM ghcr.io/openai/codex-universal:latest
 
-LABEL org.openai.codex-ws.image-version="2"
+LABEL org.openai.codex-ws.image-version="3"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends bubblewrap && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN bash -lc 'npm install -g @openai/codex && \
     ln -sf "$(command -v node)" /usr/local/bin/node && \

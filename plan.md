@@ -55,6 +55,8 @@ sandbox at launch time.
 - [x] Switched the derived image build to npm for simpler build-time Codex CLI installation.
 - [x] Linked Codex CLI and Node into `/usr/local/bin` so the image entrypoint works without
   shell startup PATH initialization.
+- [x] Pre-trusted generated container workspace paths in `config.toml` to avoid interactive trust
+  writes against read-only config mounts.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

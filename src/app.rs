@@ -9,7 +9,7 @@ use crate::docker::{
     DEFAULT_CODEX_IMAGE, DEFAULT_CODEX_IMAGE_VERSION, DockerLaunchConfig, ProviderConfigFiles,
     build_docker_run_command,
 };
-use crate::manifest::{load_workspace_manifest, validate_workspace_folders};
+use crate::manifest::{WorkspaceManifest, load_workspace_manifest, validate_workspace_folders};
 use crate::provider::{CodexProvider, load_codex_providers};
 
 /// Run configuration derived from CLI arguments.
@@ -148,6 +148,7 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
 
     let provider_files = write_provider_config_files(
         &provider,
+        &manifest,
         &config
             .docker_launch_config()
             .sessions_root()
@@ -164,6 +165,7 @@ pub fn run_workspace(config: &RunConfig) -> Result<ExitCode> {
 
 fn write_provider_config_files(
     provider: &CodexProvider,
+    manifest: &WorkspaceManifest,
     config_dir: &Path,
 ) -> Result<ProviderConfigFiles> {
     fs::create_dir_all(config_dir).with_context(|| {
@@ -181,7 +183,8 @@ fn write_provider_config_files(
             auth_path.display()
         )
     })?;
-    fs::write(&config_path, provider.config_toml()).with_context(|| {
+    let config_toml = trusted_workspace_config(provider.config_toml(), manifest);
+    fs::write(&config_path, config_toml).with_context(|| {
         format!(
             "failed to write provider config file '{}'",
             config_path.display()
@@ -189,6 +192,22 @@ fn write_provider_config_files(
     })?;
 
     Ok(ProviderConfigFiles::new(auth_path, config_path))
+}
+
+fn trusted_workspace_config(provider_config_toml: &str, manifest: &WorkspaceManifest) -> String {
+    let mut config =
+        String::with_capacity(provider_config_toml.len() + manifest.folders().len() * 64);
+    config.push_str(provider_config_toml.trim_end());
+    config.push_str("\n\n");
+
+    for index in 0..manifest.folders().len() {
+        config.push_str(&format!(
+            "[projects.\"/workspace/{}\"]\ntrust_level = \"trusted\"\n\n",
+            index + 1
+        ));
+    }
+
+    config
 }
 
 fn create_host_directory(path: &Path, label: &str) -> Result<()> {
@@ -313,8 +332,14 @@ mod tests {
             "{\n  \"OPENAI_API_KEY\": \"test-key\"\n}".to_owned(),
             "model = \"gpt-5.5\"\n".to_owned(),
         );
+        let manifest = WorkspaceManifest::new(
+            "workspace".to_owned(),
+            vec![PathBuf::from("/host/project")],
+            crate::manifest::SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
 
-        let files = write_provider_config_files(&provider, temp_dir.path())
+        let files = write_provider_config_files(&provider, &manifest, temp_dir.path())
             .expect("provider config files should be written");
 
         assert_eq!(
@@ -323,8 +348,26 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(files.config_path()).expect("config file should be readable"),
-            "model = \"gpt-5.5\"\n"
+            "model = \"gpt-5.5\"\n\n[projects.\"/workspace/1\"]\ntrust_level = \"trusted\"\n\n"
         );
+    }
+
+    #[test]
+    fn trusted_workspace_config_trusts_every_container_workspace_path() {
+        let manifest = WorkspaceManifest::new(
+            "workspace".to_owned(),
+            vec![
+                PathBuf::from("/host/backend"),
+                PathBuf::from("/host/frontend"),
+            ],
+            crate::manifest::SandboxConfig::default(),
+        )
+        .expect("manifest should be valid");
+
+        let config = trusted_workspace_config("model = \"gpt-5.5\"\n", &manifest);
+
+        assert!(config.contains("[projects.\"/workspace/1\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[projects.\"/workspace/2\"]\ntrust_level = \"trusted\""));
     }
 
     #[derive(Debug)]

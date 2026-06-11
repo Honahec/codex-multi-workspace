@@ -44,13 +44,14 @@ sandbox at launch time.
 - [x] Added integration-style tests for Docker launch command construction.
 - [x] Wired the CLI to load providers, parse manifests, validate folders, create session
   directories, and execute Docker.
+- [x] Ran `cargo fmt --check`.
+- [x] Ran `cargo clippy -- -D warnings`.
+- [x] Ran `cargo test`.
+- [x] Ran `cargo build`.
 
 ## Pending
 
-- [ ] Run `cargo fmt --check`.
-- [ ] Run `cargo clippy -- -D warnings`.
-- [ ] Run `cargo test`.
-- [ ] Run `cargo build`.
+No pending items.
 
 ## Update Rules
 

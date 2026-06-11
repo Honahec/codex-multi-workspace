@@ -210,20 +210,15 @@ name: {workspace_name}
 folders:
   - /absolute/path/to/project
 
-sandbox:
-  # Codex CLI runs inside the container, so it needs network access to reach the model provider.
-  # Set to false only for intentionally offline experiments.
-  network: true
+# The container has network access by default so Codex can reach the model provider.
+# Advanced offline-only configuration:
+# sandbox:
+#   network: false
 
-# Optional Codex Universal language runtime examples.
-# runtime: golang:1.25.1
+# Optional Codex Universal language runtimes.
 # runtime:
 #   - node:22
 #   - python:3.13
-
-# Optional advanced image override. Most workspaces should leave this unset.
-# runtime:
-#   image: custom-codex-ws:latest
 "#
     )
 }

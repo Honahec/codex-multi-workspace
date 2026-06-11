@@ -1,5 +1,9 @@
 # codex-multi-workspace
 
+[![CI](https://github.com/Honahec/codex-multi-workspace/actions/workflows/release.yml/badge.svg)](https://github.com/Honahec/codex-multi-workspace/actions/workflows/release.yml)
+[![Crates.io](https://img.shields.io/crates/v/codex-multi-workspace.svg)](https://crates.io/crates/codex-multi-workspace)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 Run Codex CLI in Docker with saved single-folder or multi-folder workspaces.
 
 `codex-multi-workspace` provides the `codex-ws` command. It reads Codex provider

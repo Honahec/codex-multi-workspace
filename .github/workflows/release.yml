@@ -61,6 +61,7 @@ jobs:
         id: crates
         run: |
           status="$(curl -sS -o /tmp/codex-multi-workspace-version.json -w "%{http_code}" \
+            -H "User-Agent: Honahec/codex-multi-workspace release workflow (https://github.com/Honahec/codex-multi-workspace)" \
             "https://crates.io/api/v1/crates/codex-multi-workspace/${{ steps.crate.outputs.version }}")"
           if [ "$status" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"

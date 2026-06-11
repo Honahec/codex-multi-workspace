@@ -43,6 +43,7 @@ workspace conversation sessions under a predictable host path.
 - [x] Added tag-based GitHub Actions release publishing for GHCR and crates.io.
 - [x] Published the initial `codex-multi-workspace` crate release to crates.io.
 - [x] Pushed the `v0.1.0` release tag to trigger the GHCR runtime image release.
+- [x] Fixed the release workflow crates.io version check to send an explicit User-Agent.
 
 ## Pending
 

@@ -38,7 +38,7 @@ pub struct RunArgs {
     #[arg(long, value_name = "PATH", default_value = "~/.codex-ws")]
     pub sessions_root: PathBuf,
 
-    /// Docker image containing the pinned Codex CLI version.
+    /// Docker image containing the Codex CLI.
     #[arg(long, default_value = DEFAULT_CODEX_IMAGE)]
     pub image: String,
 }

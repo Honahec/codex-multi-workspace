@@ -9,8 +9,8 @@ const CONTAINER_CODEX_DIR: &str = "/root/.codex";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
-/// Default pinned Codex CLI Docker image used for sandbox launches.
-pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-cli:0.1.0";
+/// Default Codex CLI Docker image used for sandbox launches.
+pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/openai/codex-cli:latest";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,7 +24,7 @@ impl DockerLaunchConfig {
     ///
     /// # Arguments
     ///
-    /// * `image` - Docker image containing the pinned Codex CLI version.
+    /// * `image` - Docker image containing the Codex CLI.
     /// * `sessions_root` - Host directory where per-workspace sessions are stored.
     ///
     /// # Returns

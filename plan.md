@@ -4,7 +4,7 @@ Last Updated: 2026-06-11
 
 ## Project Goal
 
-Build `codex-ws`, a Rust CLI that launches a pinned Codex CLI sandbox for a selected
+Build `codex-ws`, a Rust CLI that launches a Codex CLI sandbox for a selected
 configuration and workspace. A workspace may contain one project folder or multiple
 folders, while conversation sessions remain host-managed and are mounted into the
 sandbox at launch time.
@@ -37,7 +37,7 @@ sandbox at launch time.
 - [x] Added unit tests for manifest parsing.
 - [x] Implemented workspace folder path validation before launch.
 - [x] Added unit tests for workspace folder validation.
-- [x] Implemented Docker sandbox launch command construction with a pinned Codex CLI image.
+- [x] Implemented Docker sandbox launch command construction with a default Codex CLI image.
 - [x] Added provider auth and config mounts for the sandbox.
 - [x] Added workspace folder mounts for the sandbox.
 - [x] Added host-managed workspace session mount routing.

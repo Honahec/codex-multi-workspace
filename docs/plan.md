@@ -20,8 +20,8 @@ workspace conversation sessions under a predictable host path.
 - [x] Built Docker launch construction for mounted workspace folders, provider config,
   sessions, optional skills, sandbox networking, runtime environment variables, and image
   selection.
-- [x] Added the derived `codex-ws:latest` runtime image based on Codex Universal with
-  Codex CLI, `bubblewrap`, and a wrapper entrypoint that runs Universal setup before Codex.
+- [x] Added the GHCR runtime image based on Codex Universal with Codex CLI,
+  `bubblewrap`, and a wrapper entrypoint that runs Universal setup before Codex.
 - [x] Supported runtime specs such as `golang:1.25.1` by mapping them to Codex Universal
   `CODEX_ENV_*` variables and validating against the supported version matrix.
 - [x] Switched persistent workspace state to only
@@ -37,7 +37,11 @@ workspace conversation sessions under a predictable host path.
 - [x] Allowed `run --workspace <workspace-name>` to resolve saved workspace manifests.
 - [x] Defaulted workspace sandbox networking to enabled so Codex CLI can reach the configured
   model provider.
+- [x] Prepared crates.io package metadata for `codex-multi-workspace`.
+- [x] Added a concise user-facing README covering install, workspace setup, runtime image,
+  cc-switch, and Codex Universal usage.
+- [x] Added tag-based GitHub Actions release publishing for GHCR and crates.io.
 
 ## Pending
 
-No pending items.
+- [ ] Publish the initial crate release.

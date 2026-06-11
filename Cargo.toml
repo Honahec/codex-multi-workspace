@@ -1,7 +1,18 @@
 [package]
-name = "codex-ws"
+name = "codex-multi-workspace"
 version = "0.1.0"
 edition = "2024"
+description = "Run Codex CLI in Docker across saved single-folder or multi-folder workspaces."
+license = "MIT"
+repository = "https://github.com/Honahec/codex-multi-workspace"
+readme = "README.md"
+
+[lib]
+name = "codex_ws"
+
+[[bin]]
+name = "codex-ws"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"

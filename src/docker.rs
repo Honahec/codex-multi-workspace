@@ -11,7 +11,7 @@ const CONTAINER_SKILLS_DIR: &str = "/root/.codex/skills";
 const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 
 /// Default Codex CLI Docker image used for sandbox launches.
-pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
+pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
 
 /// Version label expected on the locally built Codex workspace image.
 pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "5";

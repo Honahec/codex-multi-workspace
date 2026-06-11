@@ -191,10 +191,10 @@ fn write_provider_config_files(
     manifest: &WorkspaceManifest,
     provider_config_root: &Path,
 ) -> Result<RunScopedProviderConfig> {
-    let config_dir = create_run_scoped_config_dir(provider_config_root)?;
+    let config_dir = create_run_scoped_directory(provider_config_root, "codex-ws-provider")?;
 
-    let auth_path = config_dir.join("auth.json");
-    let config_path = config_dir.join("config.toml");
+    let auth_path = config_dir.path().join("auth.json");
+    let config_path = config_dir.path().join("config.toml");
     fs::write(&auth_path, provider.auth_json()).with_context(|| {
         format!(
             "failed to write provider auth file '{}'",
@@ -236,28 +236,21 @@ fn create_host_directory(path: &Path, label: &str) -> Result<()> {
         .with_context(|| format!("failed to create {label} directory '{}'", path.display()))
 }
 
-fn create_run_scoped_config_dir(provider_config_root: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(provider_config_root).with_context(|| {
+fn create_run_scoped_directory(root: &Path, prefix: &str) -> Result<RunScopedDirectory> {
+    fs::create_dir_all(root).with_context(|| {
         format!(
-            "failed to create provider config root directory '{}'",
-            provider_config_root.display()
+            "failed to create run-scoped root directory '{}'",
+            root.display()
         )
     })?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before the Unix epoch")?
         .as_nanos();
-    let path = provider_config_root.join(format!(
-        "codex-ws-provider-{}-{timestamp}",
-        std::process::id()
-    ));
-    fs::create_dir(&path).with_context(|| {
-        format!(
-            "failed to create run-scoped provider config directory '{}'",
-            path.display()
-        )
-    })?;
-    Ok(path)
+    let path = root.join(format!("{prefix}-{}-{timestamp}", std::process::id()));
+    fs::create_dir(&path)
+        .with_context(|| format!("failed to create run-scoped directory '{}'", path.display()))?;
+    Ok(RunScopedDirectory::new(path))
 }
 
 fn ensure_default_image(image: &str) -> Result<()> {
@@ -280,17 +273,15 @@ fn ensure_default_image(image: &str) -> Result<()> {
         return Ok(());
     }
 
-    let build_status = Command::new("docker")
-        .args(["build", "-t", image, "-f", "Dockerfile.codex-ws", "."])
+    let pull_status = Command::new("docker")
+        .args(["pull", image])
         .status()
-        .context("failed to build Codex workspace Docker image")?;
-    if build_status.success() {
+        .context("failed to pull Codex workspace Docker image")?;
+    if pull_status.success() {
         return Ok(());
     }
 
-    Err(anyhow!(
-        "failed to build Docker image '{image}' from Dockerfile.codex-ws"
-    ))
+    Err(anyhow!("failed to pull Docker image '{image}'"))
 }
 
 fn select_provider(providers: Vec<CodexProvider>, provider_name: &str) -> Result<CodexProvider> {
@@ -309,13 +300,16 @@ fn exit_code_from_status(status: ExitStatus) -> ExitCode {
 
 #[derive(Debug)]
 struct RunScopedProviderConfig {
-    directory: PathBuf,
+    _directory: RunScopedDirectory,
     files: ProviderConfigFiles,
 }
 
 impl RunScopedProviderConfig {
-    fn new(directory: PathBuf, files: ProviderConfigFiles) -> Self {
-        Self { directory, files }
+    fn new(directory: RunScopedDirectory, files: ProviderConfigFiles) -> Self {
+        Self {
+            _directory: directory,
+            files,
+        }
     }
 
     fn files(&self) -> &ProviderConfigFiles {
@@ -323,9 +317,24 @@ impl RunScopedProviderConfig {
     }
 }
 
-impl Drop for RunScopedProviderConfig {
+#[derive(Debug)]
+struct RunScopedDirectory {
+    path: PathBuf,
+}
+
+impl RunScopedDirectory {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for RunScopedDirectory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.directory);
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 

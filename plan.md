@@ -47,6 +47,8 @@ sandbox at launch time.
 - [x] Fixed provider loading for the real `settings_config` column shape.
 - [x] Added generated host config files for provider auth JSON and config TOML before Docker launch.
 - [x] Switched the default Docker image to the official Codex Universal image.
+- [x] Removed the hard-coded `codex` container command because Codex Universal starts an
+  interactive shell environment by default.
 - [x] Ran `cargo fmt --check`.
 - [x] Ran `cargo clippy -- -D warnings`.
 - [x] Ran `cargo test`.

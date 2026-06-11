@@ -211,7 +211,6 @@ fn docker_run_args(
     args.push("--workdir".to_owned());
     args.push(format!("{CONTAINER_WORKSPACE_ROOT}/1"));
     args.push(launch_config.image().to_owned());
-    args.push("codex".to_owned());
 
     Ok(args)
 }
@@ -304,7 +303,6 @@ mod tests {
                 "--workdir",
                 "/workspace/1",
                 "codex-universal:test",
-                "codex",
             ]
         );
     }

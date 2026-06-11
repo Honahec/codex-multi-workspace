@@ -27,8 +27,8 @@ workspace conversation sessions under a predictable host path.
 - [x] Switched persistent workspace state to only
   `.codex-ws/<workspace>/sessions`, avoiding persistence of the full container
   `/root/.codex` directory.
-- [x] Mounted generated provider auth/config files as run-scoped inputs instead of storing
-  them in workspace state.
+- [x] Mounted generated provider auth/config files as run-scoped inputs under the workspace
+  sessions root so Docker can access them on hosts with restricted shared paths.
 - [x] Mounted host `~/.agents/skills` into the container read-only when the directory
   exists, while allowing startup without skills.
 

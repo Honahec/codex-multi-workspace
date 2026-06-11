@@ -69,6 +69,12 @@ sandbox at launch time.
 - [x] Rebuilt `codex-ws:latest` from `Dockerfile.codex-ws`.
 - [x] Verified the derived Docker image entrypoint, image version label, Codex CLI, and
   `bubblewrap`.
+- [x] Added a Codex Universal entrypoint wrapper that runs runtime setup before Codex CLI.
+- [x] Parsed workspace runtime specs like `golang:1.25.1`.
+- [x] Validated runtime language versions against the current Codex Universal support matrix.
+- [x] Passed parsed runtime specs as `CODEX_ENV_*` variables to Docker.
+- [x] Rebuilt `codex-ws:latest` with the runtime setup wrapper.
+- [x] Verified `CODEX_ENV_GO_VERSION=1.25.1` triggers Codex Universal setup before Codex CLI.
 
 ## Pending
 

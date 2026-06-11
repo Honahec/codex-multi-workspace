@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::runtime::{RuntimeEnvironmentVariable, RuntimeLanguageVersion, RuntimeSpecError};
+
 /// Workspace manifest describing folders and sandbox options.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceManifest {
@@ -159,6 +161,7 @@ impl SandboxConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuntimeConfig {
     image: Option<String>,
+    language_versions: Vec<RuntimeLanguageVersion>,
 }
 
 impl RuntimeConfig {
@@ -173,7 +176,31 @@ impl RuntimeConfig {
     /// A runtime configuration value.
     #[must_use]
     pub fn new(image: Option<String>) -> Self {
-        Self { image }
+        Self {
+            image,
+            language_versions: Vec::new(),
+        }
+    }
+
+    /// Create a runtime configuration with language versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - Optional Docker image used for this workspace.
+    /// * `language_versions` - Codex Universal language runtimes requested by the workspace.
+    ///
+    /// # Returns
+    ///
+    /// A runtime configuration value.
+    #[must_use]
+    pub fn with_language_versions(
+        image: Option<String>,
+        language_versions: Vec<RuntimeLanguageVersion>,
+    ) -> Self {
+        Self {
+            image,
+            language_versions,
+        }
     }
 
     /// Return the workspace-specific Docker image.
@@ -184,6 +211,29 @@ impl RuntimeConfig {
     #[must_use]
     pub fn image(&self) -> Option<&str> {
         self.image.as_deref()
+    }
+
+    /// Return selected language runtime versions.
+    ///
+    /// # Returns
+    ///
+    /// Language runtimes requested by this workspace.
+    #[must_use]
+    pub fn language_versions(&self) -> &[RuntimeLanguageVersion] {
+        &self.language_versions
+    }
+
+    /// Return Docker environment variables for Codex Universal.
+    ///
+    /// # Returns
+    ///
+    /// `CODEX_ENV_*` variables generated from configured language runtimes.
+    #[must_use]
+    pub fn environment_variables(&self) -> Vec<RuntimeEnvironmentVariable> {
+        self.language_versions
+            .iter()
+            .map(RuntimeLanguageVersion::environment_variable)
+            .collect()
     }
 }
 
@@ -215,6 +265,10 @@ pub enum ManifestError {
     #[error("workspace manifest runtime image cannot be empty")]
     EmptyRuntimeImage,
 
+    /// The workspace runtime language selection was invalid.
+    #[error("invalid workspace runtime: {0}")]
+    RuntimeSpec(#[from] RuntimeSpecError),
+
     /// A workspace folder path does not exist.
     #[error("workspace folder '{path}' does not exist")]
     FolderMissing {
@@ -237,7 +291,7 @@ struct RawWorkspaceManifest {
     #[serde(default)]
     sandbox: RawSandboxConfig,
     #[serde(default)]
-    runtime: RawRuntimeConfig,
+    runtime: Option<RawRuntimeConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -246,22 +300,64 @@ struct RawSandboxConfig {
     network: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawRuntimeConfig {
+    Spec(String),
+    Specs(Vec<String>),
+    Map(RawRuntimeMap),
+}
+
 #[derive(Debug, Default, Deserialize)]
-struct RawRuntimeConfig {
+struct RawRuntimeMap {
     image: Option<String>,
+    #[serde(default)]
+    languages: Vec<String>,
 }
 
 impl TryFrom<RawWorkspaceManifest> for WorkspaceManifest {
     type Error = ManifestError;
 
     fn try_from(raw: RawWorkspaceManifest) -> Result<Self, Self::Error> {
+        let runtime = raw.runtime.unwrap_or_default().try_into()?;
         Self::with_runtime(
             raw.name,
             raw.folders,
             SandboxConfig::new(raw.sandbox.network),
-            RuntimeConfig::new(raw.runtime.image.map(|image| image.trim().to_owned())),
+            runtime,
         )
     }
+}
+
+impl Default for RawRuntimeConfig {
+    fn default() -> Self {
+        Self::Map(RawRuntimeMap::default())
+    }
+}
+
+impl TryFrom<RawRuntimeConfig> for RuntimeConfig {
+    type Error = ManifestError;
+
+    fn try_from(raw: RawRuntimeConfig) -> Result<Self, Self::Error> {
+        match raw {
+            RawRuntimeConfig::Spec(spec) => runtime_from_parts(None, vec![spec]),
+            RawRuntimeConfig::Specs(specs) => runtime_from_parts(None, specs),
+            RawRuntimeConfig::Map(map) => runtime_from_parts(map.image, map.languages),
+        }
+    }
+}
+
+fn runtime_from_parts(
+    image: Option<String>,
+    specs: Vec<String>,
+) -> Result<RuntimeConfig, ManifestError> {
+    let image = image.map(|runtime_image| runtime_image.trim().to_owned());
+    let language_versions = crate::runtime::parse_runtime_specs(&specs)?;
+
+    Ok(RuntimeConfig::with_language_versions(
+        image,
+        language_versions,
+    ))
 }
 
 /// Load a workspace manifest from a YAML file.
@@ -439,6 +535,79 @@ runtime:
     }
 
     #[test]
+    fn parse_workspace_manifest_supports_scalar_runtime_spec() {
+        let manifest = parse_workspace_manifest(
+            r#"
+name: go-project
+folders:
+  - /projects/go-project
+runtime: golang:1.25.1
+"#,
+        )
+        .expect("manifest should parse");
+
+        assert_eq!(
+            manifest.runtime().environment_variables()[0].docker_assignment(),
+            "CODEX_ENV_GO_VERSION=1.25.1"
+        );
+    }
+
+    #[test]
+    fn parse_workspace_manifest_supports_runtime_spec_list() {
+        let manifest = parse_workspace_manifest(
+            r#"
+name: web-project
+folders:
+  - /projects/web-project
+runtime:
+  - node:22
+  - python:3.13
+"#,
+        )
+        .expect("manifest should parse");
+
+        let variables = manifest.runtime().environment_variables();
+        assert_eq!(
+            variables
+                .iter()
+                .map(crate::runtime::RuntimeEnvironmentVariable::docker_assignment)
+                .collect::<Vec<_>>(),
+            vec![
+                "CODEX_ENV_NODE_VERSION=22".to_owned(),
+                "CODEX_ENV_PYTHON_VERSION=3.13".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_workspace_manifest_supports_runtime_map_languages() {
+        let manifest = parse_workspace_manifest(
+            r#"
+name: mixed-project
+folders:
+  - /projects/mixed-project
+runtime:
+  languages:
+    - rust:1.95.0
+    - java:21
+"#,
+        )
+        .expect("manifest should parse");
+
+        let variables = manifest.runtime().environment_variables();
+        assert_eq!(
+            variables
+                .iter()
+                .map(crate::runtime::RuntimeEnvironmentVariable::docker_assignment)
+                .collect::<Vec<_>>(),
+            vec![
+                "CODEX_ENV_RUST_VERSION=1.95.0".to_owned(),
+                "CODEX_ENV_JAVA_VERSION=21".to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn parse_workspace_manifest_rejects_empty_name() {
         let error = parse_workspace_manifest(
             r#"
@@ -479,6 +648,27 @@ runtime:
         .expect_err("blank runtime image should fail");
 
         assert!(matches!(error, ManifestError::EmptyRuntimeImage));
+    }
+
+    #[test]
+    fn parse_workspace_manifest_rejects_unsupported_runtime_versions() {
+        let error = parse_workspace_manifest(
+            r#"
+name: workspace
+folders:
+  - /projects/backend
+runtime: go:1.99.0
+"#,
+        )
+        .expect_err("unsupported runtime version should fail");
+
+        assert!(matches!(
+            error,
+            ManifestError::RuntimeSpec(crate::runtime::RuntimeSpecError::UnsupportedVersion {
+                language: crate::runtime::RuntimeLanguage::Go,
+                version
+            }) if version == "1.99.0"
+        ));
     }
 
     #[test]

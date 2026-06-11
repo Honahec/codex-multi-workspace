@@ -13,7 +13,7 @@ const CONTAINER_WORKSPACE_ROOT: &str = "/workspace";
 pub const DEFAULT_CODEX_IMAGE: &str = "codex-ws:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "3";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "4";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +208,10 @@ fn docker_run_args(
         args.extend(["--network".to_owned(), "none".to_owned()]);
     }
 
+    for variable in manifest.runtime().environment_variables() {
+        args.extend(["-e".to_owned(), variable.docker_assignment()]);
+    }
+
     args.extend(volume_args(codex_home.path(), CONTAINER_CODEX_DIR, false));
     let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
@@ -252,7 +256,8 @@ fn default_sessions_root_from_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::SandboxConfig;
+    use crate::manifest::{RuntimeConfig, SandboxConfig};
+    use crate::runtime::RuntimeLanguageVersion;
 
     fn test_codex_home() -> CodexHome {
         CodexHome::new(PathBuf::from("/host/.codex-ws/workspace-name/codex-home"))
@@ -319,6 +324,27 @@ mod tests {
 
         assert!(!args.iter().any(|arg| arg == "--network"));
         assert!(!args.iter().any(|arg| arg == "none"));
+    }
+
+    #[test]
+    fn docker_run_args_passes_runtime_environment_variables() {
+        let runtime =
+            RuntimeLanguageVersion::parse("golang:1.25.1").expect("runtime spec should parse");
+        let manifest = WorkspaceManifest::with_runtime(
+            "workspace-name".to_owned(),
+            vec![PathBuf::from("/projects/backend")],
+            SandboxConfig::default(),
+            RuntimeConfig::with_language_versions(None, vec![runtime]),
+        )
+        .expect("manifest should be valid");
+
+        let args = docker_run_args(&test_codex_home(), &manifest, &test_launch_config())
+            .expect("docker args should build");
+
+        assert!(
+            args.windows(2)
+                .any(|window| window == ["-e", "CODEX_ENV_GO_VERSION=1.25.1"])
+        );
     }
 
     #[test]

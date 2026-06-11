@@ -82,4 +82,4 @@ Override it when needed:
 codex-ws run --provider OpenAI --workspace my-workspace --image my-codex-runtime:latest
 ```
 
-Welcome Stars and PRs.
+**Welcome Stars and PRs.**

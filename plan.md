@@ -21,15 +21,18 @@ sandbox at launch time.
 - [x] Initialized the Rust CLI crate structure for `codex-ws`.
 - [x] Defined the initial CLI command surface for selecting a provider configuration and
   workspace.
-
-## Pending
-
-- [ ] Read Codex provider rows from `~/.cc-switch/cc-switch.db`.
-- [ ] Filter provider rows to `app_type == "codex"`.
-- [ ] Map provider fields into internal Rust types:
+- [x] Added structured errors with `thiserror` for provider loading failures.
+- [x] Added application-level error handling with `anyhow`.
+- [x] Implemented reading Codex provider rows from `~/.cc-switch/cc-switch.db`.
+- [x] Implemented provider filtering for `app_type == "codex"`.
+- [x] Mapped provider fields into internal Rust types:
   - `name`
   - `settings.config.auth`
   - `settings.config.config`
+- [x] Added unit tests for provider filtering and mapping.
+
+## Pending
+
 - [ ] Define the workspace manifest schema.
 - [ ] Parse workspace manifests from YAML.
 - [ ] Support single-folder and multi-folder workspaces.
@@ -40,9 +43,7 @@ sandbox at launch time.
 - [ ] Mount workspace folders into the sandbox.
 - [ ] Mount workspace sessions from the host-managed session directory.
 - [ ] Route sessions using `~/.codex-ws/<workspace-name>/sessions`.
-- [ ] Add structured errors with `thiserror` for library-level failures.
-- [ ] Add application-level error context with `anyhow`.
-- [ ] Add unit tests for manifest parsing and provider mapping.
+- [ ] Add unit tests for manifest parsing.
 - [ ] Add integration tests for launch command construction.
 - [ ] Run `cargo fmt --check`.
 - [ ] Run `cargo clippy -- -D warnings`.

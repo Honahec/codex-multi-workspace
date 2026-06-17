@@ -21,6 +21,8 @@ includes Codex CLI, Node.js 22, Git, `curl`, `bubblewrap`, `uv`, and `mise`.
 Workspaces can request modern Python, Node.js, Go, Rust, Java, C/C++, Ruby,
 PHP, Deno, Bun, Zig, and .NET versions declaratively instead of relying on older
 Ubuntu apt packages.
+It also includes `lazycodex-ai` and configures the Codex Light edition in
+non-interactive autonomous mode before each Codex session starts.
 
 ## Install
 

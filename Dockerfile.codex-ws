@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-LABEL org.openai.codex-ws.image-version="7"
+LABEL org.openai.codex-ws.image-version="8"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MISE_DATA_DIR=/opt/mise
@@ -29,10 +29,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @openai/codex && \
+RUN npm install -g @openai/codex lazycodex-ai && \
     npm cache clean --force && \
     ln -sf "$(command -v node)" /usr/local/bin/node && \
-    ln -sf "$(command -v codex)" /usr/local/bin/codex
+    ln -sf "$(command -v codex)" /usr/local/bin/codex && \
+    ln -sf "$(command -v lazycodex-ai)" /usr/local/bin/lazycodex-ai
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     curl -fsSL https://mise.run | sh && \

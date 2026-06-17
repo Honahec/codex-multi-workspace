@@ -132,4 +132,19 @@ if [[ -n "${CODEX_WS_SETUP_COMMANDS:-}" ]]; then
     } > "${CODEX_WS_SETUP_SCRIPT}"
 fi
 
-exec bash --login -c 'export PATH="/root/.local/bin:${MISE_DATA_DIR:-/opt/mise}/shims:${PATH}"; if command -v mise >/dev/null 2>&1; then eval "$(mise activate bash)"; fi; if [[ -n "${CODEX_WS_SETUP_SCRIPT:-}" ]]; then source "${CODEX_WS_SETUP_SCRIPT}"; fi; exec /usr/local/bin/codex "$@"' bash "$@"
+exec bash --login -c '
+set -euo pipefail
+export PATH="/root/.local/bin:${MISE_DATA_DIR:-/opt/mise}/shims:${PATH}"
+
+if command -v mise >/dev/null 2>&1; then
+    eval "$(mise activate bash)"
+fi
+
+lazycodex-ai install --no-tui --platform=codex --codex-autonomous
+
+if [[ -n "${CODEX_WS_SETUP_SCRIPT:-}" ]]; then
+    source "${CODEX_WS_SETUP_SCRIPT}"
+fi
+
+exec /usr/local/bin/codex "$@"
+' bash "$@"

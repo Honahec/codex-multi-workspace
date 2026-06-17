@@ -20,7 +20,7 @@ const CODEX_SANDBOX_MODE: &str = "danger-full-access";
 pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "7";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "8";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]

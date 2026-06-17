@@ -215,13 +215,26 @@ folders:
 # sandbox:
 #   network: false
 
-# Optional runtime setup for the lightweight Ubuntu image.
+# Optional declarative runtime setup for the lightweight Ubuntu image.
 # runtime:
+#   python: "3.13"
+#   node: "22"
+#   go: "1.24"
+#   rust: "1.86"
+#   java: "21"
+#   clang: "20"
+#   c: "20"
+#   cpp: "20"
+#   ruby: "3.4"
+#   php: "8.4"
+#   deno: "2"
+#   bun: "1"
+#   zig: "0.14"
+#   dotnet: "9"
 #   apt:
-#     - python3
-#     - python3-pip
+#     - build-essential
 #   setup:
-#     - python3 -m pip install --user maturin
+#     - python -m pip install --user maturin
 "#
     )
 }

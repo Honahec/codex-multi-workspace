@@ -15,13 +15,15 @@ workspace conversation sessions under a predictable host path.
 - [x] Loaded Codex provider configuration from the local cc-switch SQLite database using
   the real `settings_config` schema.
 - [x] Added workspace manifest parsing for workspace name, folders, sandbox networking,
-  optional runtime image, apt packages, and setup commands.
+  optional runtime image, declarative language versions, apt packages, and setup commands.
 - [x] Validated workspace folders before launching Docker.
 - [x] Built Docker launch construction for mounted workspace folders, provider config,
   sessions, optional skills, sandbox networking, runtime setup environment variables, and image
   selection.
 - [x] Replaced the Codex Universal default runtime with a lightweight Ubuntu 22.04 image
-  containing Codex CLI, Node.js 22, Git, `curl`, and `bubblewrap`.
+  containing Codex CLI, Node.js 22, Git, `curl`, `bubblewrap`, `uv`, and `mise`.
+- [x] Added declarative runtime setup for Python, Node.js, Go, Rust, Java, C/C++,
+  Ruby, PHP, Deno, Bun, Zig, and .NET.
 - [x] Added per-workspace runtime setup through `runtime.apt` and `runtime.setup`, avoiding
   the 40GB Universal image for the default path.
 - [x] Switched persistent workspace state to only
@@ -54,4 +56,4 @@ workspace conversation sessions under a predictable host path.
 
 ## Pending
 
-- [ ] Publish the lightweight GHCR runtime image with image version `6`.
+- [ ] Publish the lightweight GHCR runtime image with image version `7`.

@@ -20,7 +20,7 @@ const CODEX_SANDBOX_MODE: &str = "danger-full-access";
 pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "6";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "7";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,6 +384,7 @@ mod tests {
 
     use super::*;
     use crate::manifest::{RuntimeConfig, SandboxConfig};
+    use crate::runtime::{RuntimeTool, RuntimeToolVersion};
 
     static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -521,6 +522,10 @@ mod tests {
             SandboxConfig::default(),
             RuntimeConfig::with_setup(
                 None,
+                vec![RuntimeToolVersion::new(
+                    RuntimeTool::Python,
+                    "3.13".to_owned(),
+                )],
                 vec!["python3".to_owned(), "python3-pip".to_owned()],
                 vec!["python3 -m pip install maturin".to_owned()],
             ),
@@ -534,6 +539,10 @@ mod tests {
         )
         .expect("docker args should build");
 
+        assert!(
+            args.windows(2)
+                .any(|window| window == ["-e", "CODEX_WS_PYTHON_VERSION=3.13"])
+        );
         assert!(
             args.windows(2)
                 .any(|window| window == ["-e", "CODEX_WS_APT_PACKAGES=python3 python3-pip"])

@@ -1,8 +1,12 @@
 FROM ubuntu:22.04
 
-LABEL org.openai.codex-ws.image-version="6"
+LABEL org.openai.codex-ws.image-version="7"
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV MISE_DATA_DIR=/opt/mise
+ENV MISE_CACHE_DIR=/var/cache/mise
+ENV MISE_CONFIG_DIR=/root/.config/mise
+ENV PATH=/root/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -12,6 +16,9 @@ RUN apt-get update && \
         curl \
         git \
         gnupg \
+        lsb-release \
+        tar \
+        unzip \
         xz-utils && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
@@ -26,6 +33,15 @@ RUN npm install -g @openai/codex && \
     npm cache clean --force && \
     ln -sf "$(command -v node)" /usr/local/bin/node && \
     ln -sf "$(command -v codex)" /usr/local/bin/codex
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    curl -fsSL https://mise.run | sh && \
+    ln -sf /root/.local/bin/uv /usr/local/bin/uv && \
+    ln -sf /root/.local/bin/uvx /usr/local/bin/uvx && \
+    ln -sf /root/.local/bin/mise /usr/local/bin/mise && \
+    mkdir -p "${MISE_DATA_DIR}" "${MISE_CACHE_DIR}" "${MISE_CONFIG_DIR}" && \
+    mise --version && \
+    uv --version
 
 RUN mkdir -p /root/.codex
 

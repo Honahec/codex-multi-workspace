@@ -17,9 +17,10 @@ and keeps each workspace's Codex sessions under `~/.codex-ws`.
 - A cc-switch database with at least one Codex provider
 
 The default runtime image is published to GHCR and is based on Ubuntu 22.04. It
-includes Codex CLI, Node.js 22, Git, `curl`, and `bubblewrap`. Other language
-runtimes can be installed per workspace with `runtime.apt` and `runtime.setup`,
-or by selecting a custom Docker image.
+includes Codex CLI, Node.js 22, Git, `curl`, `bubblewrap`, `uv`, and `mise`.
+Workspaces can request modern Python, Node.js, Go, Rust, Java, C/C++, Ruby,
+PHP, Deno, Bun, Zig, and .NET versions declaratively instead of relying on older
+Ubuntu apt packages.
 
 ## Install
 
@@ -46,13 +47,26 @@ name: my-workspace
 folders:
   - /absolute/path/to/project
 
-# Optional runtime setup for the lightweight Ubuntu image.
+# Optional declarative runtime setup for the lightweight Ubuntu image.
 # runtime:
+#   python: "3.13"
+#   node: "22"
+#   go: "1.24"
+#   rust: "1.86"
+#   java: "21"
+#   clang: "20"
+#   c: "20"
+#   cpp: "20"
+#   ruby: "3.4"
+#   php: "8.4"
+#   deno: "2"
+#   bun: "1"
+#   zig: "0.14"
+#   dotnet: "9"
 #   apt:
-#     - python3
-#     - python3-pip
+#     - build-essential
 #   setup:
-#     - python3 -m pip install --user maturin
+#     - python -m pip install --user maturin
 ```
 
 List saved workspaces:
@@ -118,22 +132,47 @@ Override it when needed:
 codex-ws run --provider OpenAI --workspace my-workspace --image my-codex-runtime:latest
 ```
 
-Workspace manifests can also request extra packages and setup commands before
-Codex starts:
+Workspace manifests can request modern language runtimes before Codex starts:
 
 ```yaml
 runtime:
+  python: "3.13"
+  node: "22"
+  go: "1.24"
+  rust: "1.86"
+  java: "21"
+  clang: "20"
+  c: "20"
+  cpp: "20"
+  ruby: "3.4"
+  php: "8.4"
+  deno: "2"
+  bun: "1"
+  zig: "0.14"
+  dotnet: "9"
+```
+
+`runtime.python` is installed with `uv`. `runtime.node`, `runtime.go`,
+`runtime.rust`, `runtime.java`, `runtime.ruby`, `runtime.php`, `runtime.deno`,
+`runtime.bun`, `runtime.zig`, and `runtime.dotnet` are installed with `mise`.
+`runtime.c`, `runtime.cpp`, and `runtime.clang` install LLVM Clang from apt
+packages and must use the same major version if configured together.
+
+You can still request extra apt packages and final setup commands:
+
+```yaml
+runtime:
+  python: "3.13"
   apt:
-    - python3
-    - python3-pip
     - build-essential
   setup:
-    - python3 -m pip install --user maturin
+    - python -m pip install --user maturin
 ```
 
 `runtime.apt` is installed with `apt-get install --no-install-recommends` inside
-the container. `runtime.setup` commands run in a login shell immediately before
-Codex, so PATH changes or sourced environment files can affect the Codex session.
-For heavier stacks, use `runtime.image` in the manifest or `--image`.
+the container before language runtimes are installed. `runtime.setup` commands
+run in a login shell immediately before Codex, so PATH changes or sourced
+environment files can affect the Codex session. For heavier stacks, use
+`runtime.image` in the manifest or `--image`.
 
 **Welcome Stars and PRs.**

@@ -6,7 +6,8 @@ use thiserror::Error;
 
 use crate::runtime::{
     CODEX_WS_APT_PACKAGES_ENV, CODEX_WS_SETUP_COMMANDS_ENV, RuntimeEnvironmentVariable,
-    RuntimeSpecError, validate_apt_packages, validate_setup_commands,
+    RuntimeSpecError, RuntimeTool, RuntimeToolVersion, validate_apt_packages,
+    validate_runtime_tool_versions, validate_setup_commands, validate_tool_version,
 };
 
 /// Workspace manifest describing folders and sandbox options.
@@ -170,6 +171,7 @@ impl SandboxConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuntimeConfig {
     image: Option<String>,
+    tool_versions: Vec<RuntimeToolVersion>,
     apt_packages: Vec<String>,
     setup_commands: Vec<String>,
 }
@@ -188,6 +190,7 @@ impl RuntimeConfig {
     pub fn new(image: Option<String>) -> Self {
         Self {
             image,
+            tool_versions: Vec::new(),
             apt_packages: Vec::new(),
             setup_commands: Vec::new(),
         }
@@ -198,7 +201,8 @@ impl RuntimeConfig {
     /// # Arguments
     ///
     /// * `image` - Optional Docker image used for this workspace.
-    /// * `apt_packages` - Apt packages installed by the entrypoint before Codex starts.
+    /// * `tool_versions` - Declarative language runtime versions installed before Codex starts.
+    /// * `apt_packages` - Apt packages installed before language tools and Codex start.
     /// * `setup_commands` - Shell commands run by the entrypoint before Codex starts.
     ///
     /// # Returns
@@ -207,11 +211,13 @@ impl RuntimeConfig {
     #[must_use]
     pub fn with_setup(
         image: Option<String>,
+        tool_versions: Vec<RuntimeToolVersion>,
         apt_packages: Vec<String>,
         setup_commands: Vec<String>,
     ) -> Self {
         Self {
             image,
+            tool_versions,
             apt_packages,
             setup_commands,
         }
@@ -225,6 +231,16 @@ impl RuntimeConfig {
     #[must_use]
     pub fn image(&self) -> Option<&str> {
         self.image.as_deref()
+    }
+
+    /// Return declarative runtime tool versions.
+    ///
+    /// # Returns
+    ///
+    /// Runtime tool versions requested by this workspace.
+    #[must_use]
+    pub fn tool_versions(&self) -> &[RuntimeToolVersion] {
+        &self.tool_versions
     }
 
     /// Return apt packages installed before Codex starts.
@@ -254,7 +270,12 @@ impl RuntimeConfig {
     /// Entrypoint variables generated from configured apt packages and setup commands.
     #[must_use]
     pub fn environment_variables(&self) -> Vec<RuntimeEnvironmentVariable> {
-        let mut variables = Vec::with_capacity(2);
+        let mut variables = Vec::with_capacity(self.tool_versions.len() + 2);
+        variables.extend(
+            self.tool_versions
+                .iter()
+                .map(RuntimeToolVersion::environment_variable),
+        );
 
         if !self.apt_packages.is_empty() {
             variables.push(RuntimeEnvironmentVariable::new(
@@ -352,6 +373,20 @@ const fn default_sandbox_network() -> bool {
 #[derive(Debug, Default, Deserialize)]
 struct RawRuntimeConfig {
     image: Option<String>,
+    python: Option<String>,
+    node: Option<String>,
+    go: Option<String>,
+    rust: Option<String>,
+    java: Option<String>,
+    clang: Option<String>,
+    c: Option<String>,
+    cpp: Option<String>,
+    ruby: Option<String>,
+    php: Option<String>,
+    deno: Option<String>,
+    bun: Option<String>,
+    zig: Option<String>,
+    dotnet: Option<String>,
     #[serde(default)]
     apt: Vec<String>,
     #[serde(default)]
@@ -376,24 +411,55 @@ impl TryFrom<RawRuntimeConfig> for RuntimeConfig {
     type Error = ManifestError;
 
     fn try_from(raw: RawRuntimeConfig) -> Result<Self, Self::Error> {
-        runtime_from_parts(raw.image, raw.apt, raw.setup)
+        runtime_from_raw(raw)
     }
 }
 
-fn runtime_from_parts(
-    image: Option<String>,
-    apt_packages: Vec<String>,
-    setup_commands: Vec<String>,
-) -> Result<RuntimeConfig, ManifestError> {
-    let image = image.map(|runtime_image| runtime_image.trim().to_owned());
-    let apt_packages = validate_apt_packages(apt_packages)?;
-    let setup_commands = validate_setup_commands(setup_commands)?;
+fn runtime_from_raw(raw: RawRuntimeConfig) -> Result<RuntimeConfig, ManifestError> {
+    let image = raw
+        .image
+        .as_ref()
+        .map(|runtime_image| runtime_image.trim().to_owned());
+    let tool_versions = validate_runtime_tool_versions(runtime_tool_versions(&raw)?)?;
+    let apt_packages = validate_apt_packages(raw.apt)?;
+    let setup_commands = validate_setup_commands(raw.setup)?;
 
     Ok(RuntimeConfig::with_setup(
         image,
+        tool_versions,
         apt_packages,
         setup_commands,
     ))
+}
+
+fn runtime_tool_versions(
+    raw: &RawRuntimeConfig,
+) -> Result<Vec<RuntimeToolVersion>, RuntimeSpecError> {
+    let raw_versions = [
+        (RuntimeTool::Python, raw.python.clone()),
+        (RuntimeTool::Node, raw.node.clone()),
+        (RuntimeTool::Go, raw.go.clone()),
+        (RuntimeTool::Rust, raw.rust.clone()),
+        (RuntimeTool::Java, raw.java.clone()),
+        (RuntimeTool::Clang, raw.clang.clone()),
+        (RuntimeTool::C, raw.c.clone()),
+        (RuntimeTool::Cpp, raw.cpp.clone()),
+        (RuntimeTool::Ruby, raw.ruby.clone()),
+        (RuntimeTool::Php, raw.php.clone()),
+        (RuntimeTool::Deno, raw.deno.clone()),
+        (RuntimeTool::Bun, raw.bun.clone()),
+        (RuntimeTool::Zig, raw.zig.clone()),
+        (RuntimeTool::Dotnet, raw.dotnet.clone()),
+    ];
+    let mut versions = Vec::with_capacity(raw_versions.len());
+
+    for (tool, version) in raw_versions {
+        if let Some(version) = validate_tool_version(tool, version)? {
+            versions.push(version);
+        }
+    }
+
+    Ok(versions)
 }
 
 /// Load a workspace manifest from a YAML file.
@@ -571,6 +637,57 @@ runtime:
     }
 
     #[test]
+    fn parse_workspace_manifest_supports_declarative_runtime_tools() {
+        let manifest = parse_workspace_manifest(
+            r#"
+name: toolchain-project
+folders:
+  - /projects/toolchain-project
+runtime:
+  python: "3.13"
+  node: "22"
+  go: "1.24"
+  rust: "1.86"
+  java: "21"
+  clang: "20"
+  c: "20"
+  cpp: "20"
+  ruby: "3.4"
+  php: "8.4"
+  deno: "2"
+  bun: "1"
+  zig: "0.14"
+  dotnet: "9"
+"#,
+        )
+        .expect("manifest should parse");
+
+        let variables = manifest.runtime().environment_variables();
+        assert_eq!(
+            variables
+                .iter()
+                .map(crate::runtime::RuntimeEnvironmentVariable::docker_assignment)
+                .collect::<Vec<_>>(),
+            vec![
+                "CODEX_WS_PYTHON_VERSION=3.13".to_owned(),
+                "CODEX_WS_NODE_VERSION=22".to_owned(),
+                "CODEX_WS_GO_VERSION=1.24".to_owned(),
+                "CODEX_WS_RUST_VERSION=1.86".to_owned(),
+                "CODEX_WS_JAVA_VERSION=21".to_owned(),
+                "CODEX_WS_CLANG_VERSION=20".to_owned(),
+                "CODEX_WS_C_VERSION=20".to_owned(),
+                "CODEX_WS_CPP_VERSION=20".to_owned(),
+                "CODEX_WS_RUBY_VERSION=3.4".to_owned(),
+                "CODEX_WS_PHP_VERSION=8.4".to_owned(),
+                "CODEX_WS_DENO_VERSION=2".to_owned(),
+                "CODEX_WS_BUN_VERSION=1".to_owned(),
+                "CODEX_WS_ZIG_VERSION=0.14".to_owned(),
+                "CODEX_WS_DOTNET_VERSION=9".to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn parse_workspace_manifest_supports_runtime_apt_packages() {
         let manifest = parse_workspace_manifest(
             r#"
@@ -707,6 +824,53 @@ runtime:
             ManifestError::RuntimeSpec(crate::runtime::RuntimeSpecError::InvalidAptPackage {
                 package
             }) if package == "python3;curl"
+        ));
+    }
+
+    #[test]
+    fn parse_workspace_manifest_rejects_invalid_tool_version() {
+        let error = parse_workspace_manifest(
+            r#"
+name: workspace
+folders:
+  - /projects/backend
+runtime:
+  go: "1.24;curl"
+"#,
+        )
+        .expect_err("invalid tool version should fail");
+
+        assert!(matches!(
+            error,
+            ManifestError::RuntimeSpec(crate::runtime::RuntimeSpecError::InvalidToolVersion {
+                tool: crate::runtime::RuntimeTool::Go,
+                version
+            }) if version == "1.24;curl"
+        ));
+    }
+
+    #[test]
+    fn parse_workspace_manifest_rejects_conflicting_c_and_cpp_versions() {
+        let error = parse_workspace_manifest(
+            r#"
+name: workspace
+folders:
+  - /projects/backend
+runtime:
+  c: "20"
+  cpp: "21"
+"#,
+        )
+        .expect_err("conflicting compiler versions should fail");
+
+        assert!(matches!(
+            error,
+            ManifestError::RuntimeSpec(
+                crate::runtime::RuntimeSpecError::ConflictingCompilerVersions {
+                    first,
+                    second
+                }
+            ) if first == "20" && second == "21"
         ));
     }
 

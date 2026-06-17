@@ -30,6 +30,9 @@ non-interactive autonomous mode before each Codex session starts.
 cargo install codex-multi-workspace
 ```
 
+To publish a new runtime image without changing the crate version, use the
+`Publish Image` GitHub Actions workflow.
+
 ## Create a Workspace
 
 ```sh

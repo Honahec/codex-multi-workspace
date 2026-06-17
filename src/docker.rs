@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::config::default_state_root;
 use crate::manifest::WorkspaceManifest;
 
-const CONTAINER_CODEX_DIR: &str = "/root/.codex";
+const CONTAINER_PROVIDER_DIR: &str = "/run/codex-ws-provider";
 const CONTAINER_SESSIONS_DIR: &str = "/root/.codex/sessions";
 const CONTAINER_SKILLS_DIR: &str = "/root/.codex/skills";
 /// Container directory under which workspace folders are mounted.
@@ -20,7 +20,7 @@ const CODEX_SANDBOX_MODE: &str = "danger-full-access";
 pub const DEFAULT_CODEX_IMAGE: &str = "ghcr.io/honahec/codex-multi-workspace:latest";
 
 /// Version label expected on the locally built Codex workspace image.
-pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "8";
+pub const DEFAULT_CODEX_IMAGE_VERSION: &str = "9";
 
 /// Runtime paths and image settings used to construct a Docker sandbox command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -298,13 +298,13 @@ fn docker_run_args(
 
     args.extend(volume_args(
         provider_files.auth_path(),
-        &format!("{CONTAINER_CODEX_DIR}/auth.json"),
+        &format!("{CONTAINER_PROVIDER_DIR}/auth.json"),
         true,
     ));
     args.extend(volume_args(
         provider_files.config_path(),
-        &format!("{CONTAINER_CODEX_DIR}/config.toml"),
-        false,
+        &format!("{CONTAINER_PROVIDER_DIR}/config.toml"),
+        true,
     ));
     let sessions_path = launch_config.workspace_sessions_path(manifest.name());
     args.extend(volume_args(&sessions_path, CONTAINER_SESSIONS_DIR, false));
@@ -436,9 +436,9 @@ mod tests {
                 "--network",
                 "none",
                 "-v",
-                "/tmp/codex-ws-provider/auth.json:/root/.codex/auth.json:ro",
+                "/tmp/codex-ws-provider/auth.json:/run/codex-ws-provider/auth.json:ro",
                 "-v",
-                "/tmp/codex-ws-provider/config.toml:/root/.codex/config.toml",
+                "/tmp/codex-ws-provider/config.toml:/run/codex-ws-provider/config.toml:ro",
                 "-v",
                 "/host/.codex-ws/workspace-name/sessions:/root/.codex/sessions",
                 "-v",

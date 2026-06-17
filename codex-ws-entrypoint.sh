@@ -4,6 +4,7 @@ set -euo pipefail
 export MISE_DATA_DIR="${MISE_DATA_DIR:-/opt/mise}"
 export MISE_CACHE_DIR="${MISE_CACHE_DIR:-/var/cache/mise}"
 export MISE_CONFIG_DIR="${MISE_CONFIG_DIR:-/root/.config/mise}"
+export CODEX_WS_PROVIDER_DIR="${CODEX_WS_PROVIDER_DIR:-/run/codex-ws-provider}"
 export PATH="/root/.local/bin:${MISE_DATA_DIR}/shims:${PATH}"
 
 if [[ -n "${CODEX_WS_APT_PACKAGES:-}" ]]; then
@@ -139,6 +140,10 @@ export PATH="/root/.local/bin:${MISE_DATA_DIR:-/opt/mise}/shims:${PATH}"
 if command -v mise >/dev/null 2>&1; then
     eval "$(mise activate bash)"
 fi
+
+mkdir -p /root/.codex
+install -m 0600 "${CODEX_WS_PROVIDER_DIR}/auth.json" /root/.codex/auth.json
+install -m 0600 "${CODEX_WS_PROVIDER_DIR}/config.toml" /root/.codex/config.toml
 
 lazycodex-ai install --no-tui --platform=codex --codex-autonomous
 
